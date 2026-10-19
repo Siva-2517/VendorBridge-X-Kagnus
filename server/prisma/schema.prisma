@@ -1,0 +1,111 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  PROCUREMENT_OFFICER
+  MANAGER_APPROVER
+  VENDOR
+}
+
+enum VendorStatus {
+  ACTIVE
+  PENDING
+  BLOCKED
+}
+
+enum POStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id               String            @id @default(uuid())
+  firstName        String
+  lastName         String
+  email            String            @unique
+  passwordHash     String
+  phoneNumber      String?
+  role             Role              @default(VENDOR)
+  country          String?           @default("India")
+  additionalInfo   String?
+  avatarUrl        String?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  
+  passwordResets   PasswordResetToken[]
+  vendorProfile    Vendor?           @relation("VendorUser")
+  createdVendors   Vendor[]          @relation("VendorCreator")
+  auditLogs        AuditLog[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Vendor {
+  id             String       @id @default(uuid())
+  name           String
+  category       String       // Constructions, IT, Logistics, Manufacturing, Services
+  gstin          String       @unique // 15-char Indian GSTIN
+  contactPerson  String
+  email          String
+  phone          String
+  address        String
+  city           String?
+  state          String?
+  pincode        String?
+  country        String       @default("India")
+  status         VendorStatus @default(PENDING)
+  notes          String?
+
+  createdById    String?
+  createdBy      User?        @relation("VendorCreator", fields: [createdById], references: [id])
+  userId         String?      @unique
+  user           User?        @relation("VendorUser", fields: [userId], references: [id])
+  
+  purchaseOrders PurchaseOrder[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([name])
+  @@index([gstin])
+  @@index([category])
+  @@index([status])
+}
+
+model PurchaseOrder {
+  id          String    @id @default(uuid())
+  poNumber    String    @unique
+  vendorId    String
+  vendor      Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  amount      Float
+  status      POStatus  @default(PENDING)
+  orderDate   DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}

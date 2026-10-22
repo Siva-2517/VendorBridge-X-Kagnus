@@ -3,6 +3,13 @@
 
 VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise Resource Planning (ERP) platform designed to streamline supplier onboarding, verification, request for quotations (RFQs), multi-tier approvals, purchase orders, and 3-way matching.
 
+> [!NOTE]
+> ### 🌐 Live Production Deployment
+> - **Live Frontend (Vercel):** [https://vendorbridge-gilt.vercel.app/](https://vendorbridge-gilt.vercel.app/)
+> - **Live Backend API (Render):** [https://vendorbridge-s1qv.onrender.com](https://vendorbridge-s1qv.onrender.com)
+> - **API Health Check:** [https://vendorbridge-s1qv.onrender.com/api/health](https://vendorbridge-s1qv.onrender.com/api/health)
+> - **Cloud Database:** Neon Serverless PostgreSQL (US-East-2)
+
 ---
 
 ## 1. Overview & Week 1 Features
@@ -41,7 +48,10 @@ VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise R
 
 ### Public Landing Page & Deployment
 - **Public Homepage (`/`)**: Interactive product showcase featuring live role capabilities, workflow architecture, security assurances, and direct access to authentication.
-- **Production Deployment Ready**: Pre-configured for deployment with **Frontend on Vercel** (`client/vercel.json` SPA rewrites) and **Backend on Render** (`render.yaml` Blueprint).
+- **Production Deployment**:
+  - **Frontend:** Hosted on Vercel at [https://vendorbridge-gilt.vercel.app/](https://vendorbridge-gilt.vercel.app/) with client-side SPA routing (`client/vercel.json`).
+  - **Backend:** Hosted on Render at [https://vendorbridge-s1qv.onrender.com](https://vendorbridge-s1qv.onrender.com) using the [render.yaml](render.yaml) blueprint.
+  - **Database:** Neon Serverless PostgreSQL with persistent data models.
 - **Dual-Mode Cross-Domain Authentication**: Supports secure cross-site cookies (`SameSite=None; Secure`) and `Authorization: Bearer <token>` fallback, guaranteeing seamless authentication between Vercel and Render domains.
 
 ---
@@ -149,15 +159,20 @@ ADMIN_INVITE_CODE=ADMIN_SECURE_SETUP_2025
 
 ---
 
-## 6. Running the Application
+## 6. Accessing & Running the Application
+ 
+### 🌐 Live Production Deployment
+- **Live Frontend (Vercel):** [https://vendorbridge-gilt.vercel.app/](https://vendorbridge-gilt.vercel.app/)
+- **Live Backend API (Render):** [https://vendorbridge-s1qv.onrender.com](https://vendorbridge-s1qv.onrender.com)
+- **Live Health Endpoint:** [https://vendorbridge-s1qv.onrender.com/api/health](https://vendorbridge-s1qv.onrender.com/api/health)
 
-### Development Mode (Concurrent Server & Client)
+### Local Development Mode (Concurrent Server & Client)
 ```bash
 npm run dev
 ```
-- **Frontend**: [http://localhost:3000](http://localhost:3000)
-- **Backend API**: [http://localhost:5000](http://localhost:5000)
-- **API Health Check**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+- **Local Frontend**: [http://localhost:3000](http://localhost:3000)
+- **Local Backend API**: [http://localhost:5000](http://localhost:5000)
+- **Local Health Check**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
 
 ### Running Services Individually
 ```bash

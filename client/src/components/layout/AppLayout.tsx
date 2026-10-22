@@ -243,12 +243,16 @@ const ALL_NAV_ITEMS: NavItem[] = [
             </button>
           ) : (
             <>
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-[#36C9A5]/10 border border-[#36C9A5]/30 flex items-center justify-center text-[#36C9A5] font-bold text-sm tracking-tight shrink-0">
+              <div
+                onClick={() => navigate('/dashboard')}
+                className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                title="VendorBridge Dashboard"
+              >
+                <div className="w-8 h-8 rounded-lg bg-[#36C9A5]/10 border border-[#36C9A5]/30 flex items-center justify-center text-[#36C9A5] font-bold text-sm tracking-tight shrink-0 group-hover:border-[#36C9A5]/60 transition-colors">
                   VB
                 </div>
                 <div className="min-w-0 truncate">
-                  <h1 className="font-bold text-base text-white tracking-tight flex items-center gap-1.5 truncate">
+                  <h1 className="font-bold text-base text-white tracking-tight flex items-center gap-1.5 truncate group-hover:text-[#36C9A5] transition-colors">
                     VendorBridge
                     <span className="w-1.5 h-1.5 rounded-full bg-[#36C9A5] animate-pulse shrink-0"></span>
                   </h1>
@@ -583,7 +587,13 @@ const ALL_NAV_ITEMS: NavItem[] = [
                 <PanelLeftOpen className="w-4 h-4" />
               </button>
             )}
-            <span className="text-[#94A3B8]">VendorBridge</span>
+            <span
+              onClick={() => navigate('/')}
+              className="text-[#94A3B8] hover:text-[#36C9A5] cursor-pointer transition-colors"
+              title="VendorBridge Home"
+            >
+              VendorBridge
+            </span>
             <span className="text-[#334155]">/</span>
             <span className="text-[#F8FAFC] font-semibold text-sm">{getCurrentPageTitle()}</span>
           </div>

@@ -24,6 +24,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await api.get<{ user: User }>('/api/auth/me');
       setUser(data.user);
     } catch (err) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('vb_token');
+      }
       setUser(null);
     } finally {
       setLoading(false);
@@ -44,7 +47,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string) => {
     try {
-      const data = await api.post<{ user: User }>('/api/auth/login', { email, password });
+      const data = await api.post<{ user: User; token?: string }>('/api/auth/login', { email, password });
+      if (data.token && typeof window !== 'undefined') {
+        localStorage.setItem('vb_token', data.token);
+      }
       setUser(data.user);
       return { success: true };
     } catch (err: any) {
@@ -55,7 +61,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (formData: any) => {
     try {
-      const data = await api.post<{ user: User }>('/api/auth/register', formData);
+      const data = await api.post<{ user: User; token?: string }>('/api/auth/register', formData);
+      if (data.token && typeof window !== 'undefined') {
+        localStorage.setItem('vb_token', data.token);
+      }
       setUser(data.user);
       return { success: true };
     } catch (err: any) {
@@ -76,6 +85,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Logout request encountered an issue:', err);
     } finally {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('vb_token');
+      }
       setUser(null);
     }
   };

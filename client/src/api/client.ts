@@ -52,6 +52,11 @@ export async function apiRequest<T = any>(endpoint: string, options: ApiRequestO
     'Content-Type': 'application/json',
   };
 
+  const storedToken = typeof window !== 'undefined' ? localStorage.getItem('vb_token') : null;
+  if (storedToken) {
+    defaultHeaders['Authorization'] = `Bearer ${storedToken}`;
+  }
+
   const finalHeaders = {
     ...defaultHeaders,
     ...(headers as Record<string, string>),

@@ -6,6 +6,8 @@ dns.setDefaultResultOrder('ipv4first');
 
 export default defineConfig({
   test: {
+    include: ['src/**/*.test.ts'],
+    exclude: ['dist/**', 'node_modules/**'],
     testTimeout: 25000,
     hookTimeout: 25000,
   },

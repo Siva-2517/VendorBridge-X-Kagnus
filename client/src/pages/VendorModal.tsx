@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../components/common/Modal';
 import { Vendor, VendorStatus } from '../types';
-import { AlertCircle, Loader2, Save } from 'lucide-react';
+import { AlertCircle, Loader2, Save, Lock } from 'lucide-react';
+import { apiRequest, ApiError } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 interface VendorModalProps {
   isOpen: boolean;
@@ -27,6 +29,8 @@ export const VendorModal: React.FC<VendorModalProps> = ({
   onSaved,
   vendorToEdit,
 }) => {
+  const { user } = useAuth();
+  const isVendor = user?.role === 'VENDOR';
   const isEditing = Boolean(vendorToEdit);
 
   const [formData, setFormData] = useState({
@@ -110,25 +114,29 @@ export const VendorModal: React.FC<VendorModalProps> = ({
       const url = isEditing ? `/api/vendors/${vendorToEdit?.id}` : '/api/vendors';
       const method = isEditing ? 'PATCH' : 'POST';
 
-      const res = await fetch(url, {
+      // Vendor users cannot modify protected fields (GSTIN, Status)
+      let payloadToSend = formData;
+      if (isVendor && isEditing) {
+        const { gstin, status, ...allowedFields } = formData;
+        payloadToSend = allowedFields as any;
+      }
+
+      await apiRequest(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(formData),
+        body: payloadToSend,
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.message || 'Operation failed');
-        if (data.details) {
-          setFieldErrors(data.details);
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message || 'Operation failed');
+        if (err.data?.details) {
+          setFieldErrors(err.data.details);
         }
       } else {
-        onSaved();
-        onClose();
+        setError('Network connection error');
       }
-    } catch (err: any) {
-      setError('Network connection error');
     } finally {
       setLoading(false);
     }
@@ -142,8 +150,8 @@ export const VendorModal: React.FC<VendorModalProps> = ({
       maxWidth="max-w-2xl"
     >
       {error && (
-        <div className="mb-4 p-3 bg-rose-950/70 border border-rose-800/80 rounded-lg text-rose-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <div className="mb-4 p-3 bg-rose-950/40 border border-rose-800/60 rounded-lg text-rose-300 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{error}</span>
         </div>
       )}
@@ -160,7 +168,7 @@ export const VendorModal: React.FC<VendorModalProps> = ({
               value={formData.name}
               onChange={handleChange}
               placeholder="e.g. Infra Supplies Pvt Ltd"
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-sm text-[#F8FAFC] placeholder-slate-500 focus:outline-none focus:border-[#36C9A5]"
             />
             {fieldErrors.name && <p className="text-[11px] text-rose-400 mt-1">{fieldErrors.name[0]}</p>}
           </div>
@@ -171,7 +179,7 @@ export const VendorModal: React.FC<VendorModalProps> = ({
               name="category"
               value={formData.category}
               onChange={handleChange}
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-sm text-[#F8FAFC] focus:outline-none focus:border-[#36C9A5]"
             >
               {CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
@@ -185,37 +193,58 @@ export const VendorModal: React.FC<VendorModalProps> = ({
         {/* GSTIN & Status */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              GST Number (GSTIN) *
+            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+              {isVendor && <Lock className="w-3 h-3 text-[#36C9A5]" />}
+              <span>GST Number (GSTIN) *</span>
             </label>
             <input
               type="text"
               name="gstin"
               required
+              disabled={isVendor}
               maxLength={15}
               value={formData.gstin}
               onChange={handleChange}
               placeholder="e.g. 27AABC1576214B0"
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm font-mono text-emerald-400 uppercase focus:outline-none focus:border-emerald-500"
+              className={`w-full px-3 py-2 border rounded-lg text-sm font-mono uppercase focus:outline-none ${
+                isVendor
+                  ? 'bg-[#0B1220] border-[#334155] text-slate-400 cursor-not-allowed opacity-80'
+                  : 'bg-[#111827] border-[#334155] text-[#36C9A5] focus:border-[#36C9A5]'
+              }`}
             />
-            <p className="text-[10px] text-slate-500 mt-0.5">15-char Indian GSTIN format</p>
+            <p className="text-[10px] text-[#94A3B8] mt-0.5">
+              {isVendor ? 'Protected identifier — Contact procurement admin to modify' : '15-char Indian GSTIN format'}
+            </p>
             {fieldErrors.gstin && (
               <p className="text-[11px] text-rose-400 mt-0.5">{fieldErrors.gstin[0]}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Status</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+              {isVendor && <Lock className="w-3 h-3 text-[#36C9A5]" />}
+              <span>Status</span>
+            </label>
             <select
               name="status"
+              disabled={isVendor}
               value={formData.status}
               onChange={handleChange}
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none ${
+                isVendor
+                  ? 'bg-[#0B1220] border-[#334155] text-slate-400 cursor-not-allowed opacity-80'
+                  : 'bg-[#111827] border-[#334155] text-[#F8FAFC] focus:border-[#36C9A5]'
+              }`}
             >
               <option value="ACTIVE">Active</option>
               <option value="PENDING">Pending</option>
               <option value="BLOCKED">Blocked</option>
             </select>
+            {isVendor && (
+              <p className="text-[10px] text-[#94A3B8] mt-0.5">
+                Approval status managed by procurement team
+              </p>
+            )}
           </div>
         </div>
 
@@ -230,7 +259,7 @@ export const VendorModal: React.FC<VendorModalProps> = ({
               value={formData.contactPerson}
               onChange={handleChange}
               placeholder="e.g. Vikram Patel"
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-sm text-[#F8FAFC] placeholder-slate-500 focus:outline-none focus:border-[#36C9A5]"
             />
             {fieldErrors.contactPerson && (
               <p className="text-[11px] text-rose-400 mt-1">{fieldErrors.contactPerson[0]}</p>
@@ -246,7 +275,7 @@ export const VendorModal: React.FC<VendorModalProps> = ({
               value={formData.email}
               onChange={handleChange}
               placeholder="contact@infrasupplies.com"
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-sm text-[#F8FAFC] placeholder-slate-500 focus:outline-none focus:border-[#36C9A5]"
             />
             {fieldErrors.email && <p className="text-[11px] text-rose-400 mt-1">{fieldErrors.email[0]}</p>}
           </div>
@@ -263,7 +292,7 @@ export const VendorModal: React.FC<VendorModalProps> = ({
               value={formData.phone}
               onChange={handleChange}
               placeholder="+91 98765 43210"
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-sm text-[#F8FAFC] placeholder-slate-500 focus:outline-none focus:border-[#36C9A5]"
             />
             {fieldErrors.phone && <p className="text-[11px] text-rose-400 mt-1">{fieldErrors.phone[0]}</p>}
           </div>
@@ -276,7 +305,7 @@ export const VendorModal: React.FC<VendorModalProps> = ({
               value={formData.country}
               onChange={handleChange}
               placeholder="India"
-              className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-sm text-[#F8FAFC] focus:outline-none focus:border-[#36C9A5]"
             />
           </div>
         </div>
@@ -291,7 +320,7 @@ export const VendorModal: React.FC<VendorModalProps> = ({
             value={formData.address}
             onChange={handleChange}
             placeholder="Plot, Street, Industrial Area"
-            className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+            className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-sm text-[#F8FAFC] placeholder-slate-500 focus:outline-none focus:border-[#36C9A5]"
           />
           {fieldErrors.address && <p className="text-[11px] text-rose-400 mt-1">{fieldErrors.address[0]}</p>}
         </div>
@@ -299,36 +328,36 @@ export const VendorModal: React.FC<VendorModalProps> = ({
         {/* City, State, Pincode */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">City</label>
+            <label className="block text-xs font-medium text-[#94A3B8] mb-1">City</label>
             <input
               type="text"
               name="city"
               value={formData.city}
               onChange={handleChange}
               placeholder="e.g. Ahmedabad"
-              className="w-full px-3 py-1.5 bg-[#090f0c] border border-[#213528] rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-1.5 bg-[#111827] border border-[#334155] rounded-lg text-xs text-[#F8FAFC] focus:outline-none focus:border-[#36C9A5]"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">State</label>
+            <label className="block text-xs font-medium text-[#94A3B8] mb-1">State</label>
             <input
               type="text"
               name="state"
               value={formData.state}
               onChange={handleChange}
               placeholder="e.g. Gujarat"
-              className="w-full px-3 py-1.5 bg-[#090f0c] border border-[#213528] rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-1.5 bg-[#111827] border border-[#334155] rounded-lg text-xs text-[#F8FAFC] focus:outline-none focus:border-[#36C9A5]"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Pincode</label>
+            <label className="block text-xs font-medium text-[#94A3B8] mb-1">Pincode</label>
             <input
               type="text"
               name="pincode"
               value={formData.pincode}
               onChange={handleChange}
               placeholder="e.g. 382330"
-              className="w-full px-3 py-1.5 bg-[#090f0c] border border-[#213528] rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3 py-1.5 bg-[#111827] border border-[#334155] rounded-lg text-xs text-[#F8FAFC] focus:outline-none focus:border-[#36C9A5]"
             />
           </div>
         </div>
@@ -342,23 +371,23 @@ export const VendorModal: React.FC<VendorModalProps> = ({
             value={formData.notes}
             onChange={handleChange}
             placeholder="Special certifications, supplier ratings, or terms..."
-            className="w-full px-3 py-2 bg-[#090f0c] border border-[#213528] rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500"
+            className="w-full px-3 py-2 bg-[#111827] border border-[#334155] rounded-lg text-xs text-[#F8FAFC] placeholder-slate-500 focus:outline-none focus:border-[#36C9A5]"
           />
         </div>
 
         {/* Form Actions */}
-        <div className="flex justify-end gap-3 pt-3 border-t border-[#1a2b21]">
+        <div className="flex justify-end gap-3 pt-3 border-t border-[#334155]">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs text-slate-400 hover:text-white rounded-lg hover:bg-[#1a2b20]"
+            className="px-4 py-2 text-xs text-[#94A3B8] hover:text-[#F8FAFC] rounded-lg hover:bg-[#273449] transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-lg shadow-emerald-950/40 transition-colors disabled:opacity-50"
+            className="px-5 py-2 bg-[#36C9A5] hover:bg-[#2db893] text-[#0B1220] text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
           >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {isEditing ? 'Save Changes' : 'Register Vendor'}

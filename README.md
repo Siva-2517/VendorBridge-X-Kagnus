@@ -25,26 +25,28 @@ VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise R
 - **Compliance & Profile Inspector**: Modal drawer displaying operating address, primary contact representative, tax compliance notes, and timestamps.
 - **Administrative Protection**: Destructive deletion is restricted exclusively to the `ADMIN` role with an explicit safety confirmation dialog.
 
-### Procurement Dashboard (Screen 3)
-- **Visual Overview**: Welcome banner adapted to the authenticated user's role.
-- **Aggregated Metric Cards**:
-  - `12` Active RFQs
-  - `5` Pending Approvals
-  - `$ 2.3L` Monthly PO Commitments (INR 2,30,000)
-  - `3` Overdue Invoices
-- **Recent Purchase Orders Table**: Live records displaying PO#, Vendor, Amount (₹), and Status badges (`Approved`, `Pending`, `Draft`).
-- **Spending Trends Chart**: 6-month historical purchase visualization.
-- **Quick Action Triggers**: `+ new RFQ`, `+ Add Vendor`, and `View Invoices`.
+### Role-Tailored Procurement Dashboard (Screen 3)
+- **Role-Aware Context Banner**: Welcome banner and server-generated status notice tailored to the user's active role.
+- **Role-Tailored Metric Cards**:
+  - **Admin**: System Users (4), Registered Vendors (28: 21 Active, 4 Pending), Total PO Spend (₹3.02L), Pending Approvals (1).
+  - **Procurement Officer**: Active Suppliers (21), Pending Verifications (4), Live PO Commitments (₹3.02L), Active RFQs (12).
+  - **Manager / Approver**: Pending Approvals Queue (1), Approved Spend (₹3.02L), Active Suppliers (21), Overdue Invoices (3).
+  - **Vendor Partner**: Dedicated Company Profile Card (Legal Entity, GSTIN, PAN, Category, Address, Contact), Company Status (`ACTIVE`), Orders Awarded, Awarded PO Value, RFQ Invitations.
+- **Strict Vendor Data Isolation**:
+  - Vendor dashboard displays **only** purchase orders awarded to that vendor's organization (`Infra Supplies Pvt Ltd`).
+  - Competitor orders are never leaked in tables, totals, or trends.
+- **Spending Trends Chart**: 6-month historical purchase and revenue visualization.
+- **Permitted Quick Actions**: Contextual shortcuts (`+ Add Vendor`, `+ new RFQ`, `Review Approvals`, `View Invoices`, `Submit Quotation`).
 - **Honest Future-Module Placeholders**: Informative previews for modules scheduled for Weeks 2–4 (RFQs, Quotations, Approvals, Purchase Orders, Invoices, Reports, Audit Logs).
 
 ---
 
 ## 2. Technology Stack
 
-- **Frontend**: React 18, TypeScript, Tailwind CSS, Lucide React, React Router v6, Vite.
+- **Frontend**: React 18, TypeScript, Tailwind CSS (Slate-Navy `#111827`/`#0B1220` & Muted-Teal `#36C9A5`), Lucide React, React Router v6, Vite.
 - **Backend**: Node.js, Express, TypeScript, Zod, bcryptjs, jsonwebtoken, cookie-parser, cors, helmet, express-rate-limit.
-- **Database & ORM**: PostgreSQL (Cloud Neon ready) with Prisma ORM, coupled with a persistent transactional data store ensuring zero-configuration offline execution and testing.
-- **Testing**: Vitest & Supertest for end-to-end API integration and RBAC testing.
+- **Database & ORM**: PostgreSQL (Cloud Neon Serverless) via Prisma ORM.
+- **Testing**: Vitest & Supertest with 28 automated integration tests.
 
 ---
 
@@ -59,16 +61,15 @@ d:\Kagnus/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── prisma/
-│   │   └── schema.prisma     # PostgreSQL Prisma models
-│   ├── data/
-│   │   └── store.json        # Persistent transactional store & seed
+│   │   ├── schema.prisma     # PostgreSQL Prisma models
+│   │   └── seed.ts           # Database migration & seed script
 │   └── src/
 │       ├── types/            # TypeScript domain interfaces & enums
 │       ├── utils/            # Zod validation & GSTIN schemas
 │       ├── middleware/       # JWT auth & RBAC authorization guards
 │       ├── controllers/      # Auth, Vendor, and Dashboard controllers
 │       ├── routes/           # REST endpoint routers
-│       ├── tests/            # Vitest integration test suite
+│       ├── tests/            # Vitest integration test suite (28 tests)
 │       ├── app.ts            # Express application setup
 │       └── index.ts          # Server entry point
 └── client/                   # Frontend React & Tailwind application
@@ -78,22 +79,29 @@ d:\Kagnus/
     └── src/
         ├── types/            # Frontend interfaces
         ├── context/          # AuthContext with session persistence
-        ├── components/       # Layout, Navbar, Badges, Modals
-        └── pages/            # Login, Register, Dashboard, Vendors
+        ├── api/              # Centralized typed API client
+        ├── components/       # Layout, Navbar, Badges, Modals, AccessDenied
+        └── pages/            # Login, Register, Dashboard, Vendors, Profile
 ```
 
 ---
 
-## 4. Role & Permission Matrix (RBAC)
+## 4. Role & Navigation Permission Matrix (RBAC)
 
-| Resource / Action | Admin | Procurement Officer | Manager / Approver | Vendor |
-| :--- | :---: | :---: | :---: | :---: |
-| **View Dashboard** | ✅ Full | ✅ Full | ✅ Full | ✅ Scoped to Vendor profile |
-| **List All Vendors** | ✅ | ✅ | ✅ | ❌ Scoped to own record |
-| **Create New Vendor** | ✅ | ✅ | ❌ | ❌ |
-| **Update Vendor** | ✅ | ✅ | ❌ | ✅ (Own profile details only) |
-| **Delete Vendor** | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
-| **User Administration**| ✅ | ❌ | ❌ | ❌ |
+| Resource / Navigation Item | Route | Admin | Procurement Officer | Manager / Approver | Vendor |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Dashboard** | `/dashboard` | ✅ System Overview | ✅ Supplier Pipeline | ✅ Approvals & Spend | ✅ Scoped Company Profile & Orders |
+| **Vendors Directory** | `/vendors` | ✅ Full CRUD | ✅ Create, View, Edit | ✅ View Only | ❌ (Access Denied - 403) |
+| **RFQs (Week 2 Preview)** | `/rfqs` | ✅ | ✅ | ✅ | ❌ (Access Denied - 403) |
+| **Quotations (Week 2 Preview)** | `/quotations` | ✅ | ✅ | ✅ | ✅ (Supplier Bids) |
+| **Approvals (Week 3 Preview)** | `/approvals` | ✅ | ❌ | ✅ | ❌ (Access Denied - 403) |
+| **Purchase Orders (Week 3 Preview)** | `/purchase-orders` | ✅ | ✅ | ✅ | ✅ (Own Awarded POs) |
+| **Invoices (Week 3 Preview)** | `/invoices` | ✅ | ✅ | ✅ | ✅ (Supplier Invoices) |
+| **Reports (Week 4 Preview)** | `/reports` | ✅ | ✅ | ✅ | ❌ (Access Denied - 403) |
+| **Audit Activity (Week 4 Preview)**| `/activity` | ✅ | ❌ | ❌ | ❌ (Access Denied - 403) |
+| **User Administration** | Backend | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
+| **Delete Vendor Records** | `/api/vendors/:id` | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
+| **Modify Vendor GSTIN / Status** | `/api/vendors/:id` | ✅ | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
 
 ---
 
@@ -159,14 +167,20 @@ npm run dev:client
 
 ## 7. Testing & Verification
 
-Run the comprehensive integration test suite (covers registration, login, privilege escalation rejection, GSTIN validation, vendor CRUD, and role authorization):
+Run the comprehensive integration test suite (28 tests covering authentication, password reset, GSTIN validation, vendor CRUD, role authorization, and vendor data isolation):
 ```bash
 npm test
 ```
+*Current test suite status: 28 / 28 tests passing.*
 
 ### Production Build
+Validate production bundles for both frontend and backend:
 ```bash
-npm run build
+# Build frontend
+cd client && npm run build
+
+# Build backend
+cd ../server && npm run build
 ```
 
 ---

@@ -6,7 +6,10 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
 import { Vendors } from './pages/Vendors';
+import { Profile } from './pages/Profile';
 import { FutureModulePlaceholder } from './components/common/FutureModulePlaceholder';
+import { AccessDenied } from './components/common/AccessDenied';
+import { Role } from './types';
 import { Loader2 } from 'lucide-react';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -14,14 +17,28 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#070c0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+      <div className="min-h-screen bg-[#111827] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-[#36C9A5] animate-spin" />
       </div>
     );
   }
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+const RoleRouteGuard: React.FC<{
+  allowedRoles: Role[];
+  resourceName?: string;
+  children: React.ReactNode;
+}> = ({ allowedRoles, resourceName, children }) => {
+  const { user } = useAuth();
+
+  if (!user || !allowedRoles.includes(user.role)) {
+    return <AccessDenied resourceName={resourceName} allowedRoles={allowedRoles} />;
   }
 
   return <>{children}</>;
@@ -47,23 +64,39 @@ export const App: React.FC = () => {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="vendors" element={<Vendors />} />
+            <Route
+              path="vendors"
+              element={
+                <RoleRouteGuard
+                  allowedRoles={['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER']}
+                  resourceName="Vendor Directory"
+                >
+                  <Vendors />
+                </RoleRouteGuard>
+              }
+            />
+            <Route path="profile" element={<Profile />} />
 
             {/* Honest Empty States for Scheduled Future Modules */}
             <Route
               path="rfqs"
               element={
-                <FutureModulePlaceholder
-                  moduleName="Request for Quotations (RFQ)"
-                  scheduledWeek="Week 2"
-                  description="Create, structure, and dispatch multi-line RFQ packages to invited and verified vendor partners."
-                  features={[
-                    'Multi-line item requisition tables',
-                    'Vendor dispatch and notification list',
-                    'RFQ submission deadlines and tracking',
-                    'Category-based vendor matching',
-                  ]}
-                />
+                <RoleRouteGuard
+                  allowedRoles={['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER']}
+                  resourceName="Request for Quotations (RFQ)"
+                >
+                  <FutureModulePlaceholder
+                    moduleName="Request for Quotations (RFQ)"
+                    scheduledWeek="Week 2"
+                    description="Create, structure, and dispatch multi-line RFQ packages to invited and verified vendor partners."
+                    features={[
+                      'Multi-line item requisition tables',
+                      'Vendor dispatch and notification list',
+                      'RFQ submission deadlines and tracking',
+                      'Category-based vendor matching',
+                    ]}
+                  />
+                </RoleRouteGuard>
               }
             />
 
@@ -87,17 +120,22 @@ export const App: React.FC = () => {
             <Route
               path="approvals"
               element={
-                <FutureModulePlaceholder
-                  moduleName="Multi-Level Approvals Workflow"
-                  scheduledWeek="Week 3"
-                  description="Hierarchical procurement approval chains (L1, L2, Finance) with remarks, approval status, and audit trail."
-                  features={[
-                    'Multi-tier managerial approval stages',
-                    'Role-based delegation and remarks',
-                    'Single-click approve / reject decisions',
-                    'Instant PO conversion triggers',
-                  ]}
-                />
+                <RoleRouteGuard
+                  allowedRoles={['ADMIN', 'MANAGER_APPROVER']}
+                  resourceName="Approvals Workflow"
+                >
+                  <FutureModulePlaceholder
+                    moduleName="Multi-Level Approvals Workflow"
+                    scheduledWeek="Week 3"
+                    description="Hierarchical procurement approval chains (L1, L2, Finance) with remarks, approval status, and audit trail."
+                    features={[
+                      'Multi-tier managerial approval stages',
+                      'Role-based delegation and remarks',
+                      'Single-click approve / reject decisions',
+                      'Instant PO conversion triggers',
+                    ]}
+                  />
+                </RoleRouteGuard>
               }
             />
 
@@ -138,34 +176,44 @@ export const App: React.FC = () => {
             <Route
               path="reports"
               element={
-                <FutureModulePlaceholder
-                  moduleName="Reports & Procurement Analytics"
-                  scheduledWeek="Week 4"
-                  description="Executive dashboard analytics, department spending breakdown, supplier performance scoring, and SLA tracking."
-                  features={[
-                    'Spend analysis by category and department',
-                    'Supplier performance scorecards (OTIF)',
-                    'Cost savings and variance reports',
-                    'CSV & PDF data export pipelines',
-                  ]}
-                />
+                <RoleRouteGuard
+                  allowedRoles={['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER']}
+                  resourceName="Procurement Reports & Analytics"
+                >
+                  <FutureModulePlaceholder
+                    moduleName="Reports & Procurement Analytics"
+                    scheduledWeek="Week 4"
+                    description="Executive dashboard analytics, department spending breakdown, supplier performance scoring, and SLA tracking."
+                    features={[
+                      'Spend analysis by category and department',
+                      'Supplier performance scorecards (OTIF)',
+                      'Cost savings and variance reports',
+                      'CSV & PDF data export pipelines',
+                    ]}
+                  />
+                </RoleRouteGuard>
               }
             />
 
             <Route
               path="activity"
               element={
-                <FutureModulePlaceholder
-                  moduleName="Audit Logs & Activity Trail"
-                  scheduledWeek="Week 4"
-                  description="Immutable, tamper-evident procurement event logging recording all state changes, authorizations, and deletions."
-                  features={[
-                    'Immutable system-wide event logging',
-                    'User and role action attribution',
-                    'Timestamped state change diffs',
-                    'Compliance audit export archive',
-                  ]}
-                />
+                <RoleRouteGuard
+                  allowedRoles={['ADMIN']}
+                  resourceName="Audit Logs & Activity Trail"
+                >
+                  <FutureModulePlaceholder
+                    moduleName="Audit Logs & Activity Trail"
+                    scheduledWeek="Week 4"
+                    description="Immutable, tamper-evident procurement event logging recording all state changes, authorizations, and deletions."
+                    features={[
+                      'Immutable system-wide event logging',
+                      'User and role action attribution',
+                      'Timestamped state change diffs',
+                      'Compliance audit export archive',
+                    ]}
+                  />
+                </RoleRouteGuard>
               }
             />
           </Route>

@@ -61,3 +61,26 @@ export const vendorCreateSchema = z.object({
 });
 
 export const vendorUpdateSchema = vendorCreateSchema.partial();
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z
+      .string()
+      .min(8, 'New password must be at least 8 characters long')
+      .regex(/[A-Za-z]/, 'Password must contain at least one letter')
+      .regex(/[0-9]/, 'Password must contain at least one number'),
+    confirmPassword: z.string().min(1, 'Password confirmation is required'),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
+export const updateProfileSchema = z.object({
+  firstName: z.string().trim().min(1, 'First name is required').optional(),
+  lastName: z.string().trim().min(1, 'Last name is required').optional(),
+  phoneNumber: z.string().trim().optional().nullable(),
+  country: z.string().trim().optional(),
+  additionalInfo: z.string().trim().optional().nullable(),
+});

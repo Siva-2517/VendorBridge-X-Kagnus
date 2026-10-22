@@ -17,6 +17,7 @@ import {
   Filter,
   AlertCircle,
 } from 'lucide-react';
+import { api, ApiError } from '../api/client';
 
 export const Vendors: React.FC = () => {
   const { user } = useAuth();
@@ -43,21 +44,14 @@ export const Vendors: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const params = new URLSearchParams();
-      if (activeTab !== 'all') params.append('status', activeTab);
-      if (selectedCategory !== 'all') params.append('category', selectedCategory);
-      if (searchTerm.trim()) params.append('search', searchTerm.trim());
-
-      const res = await fetch(`/api/vendors?${params.toString()}`, {
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const data = await api.get<{ vendors: Vendor[]; counts: VendorCounts }>('/api/vendors', {
+        params: {
+          status: activeTab !== 'all' ? activeTab : undefined,
+          category: selectedCategory !== 'all' ? selectedCategory : undefined,
+          search: searchTerm.trim() || undefined,
+        },
       });
 
-      if (!res.ok) {
-        throw new Error('Failed to retrieve vendor records');
-      }
-
-      const data = await res.json();
       setVendors(data.vendors || []);
       setCounts(data.counts || { all: 0, active: 0, pending: 0, blocked: 0 });
     } catch (err: any) {
@@ -89,19 +83,12 @@ export const Vendors: React.FC = () => {
     if (!deletingVendor) return;
     setDeleteLoading(true);
     try {
-      const res = await fetch(`/api/vendors/${deletingVendor.id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.message || 'Failed to delete vendor');
-      } else {
-        setDeletingVendor(null);
-        fetchVendors();
-      }
-    } catch (err) {
-      alert('Network error while deleting vendor');
+      await api.delete(`/api/vendors/${deletingVendor.id}`);
+      setDeletingVendor(null);
+      fetchVendors();
+    } catch (err: any) {
+      const msg = err instanceof ApiError ? err.message : 'Network error while deleting vendor';
+      alert(msg);
     } finally {
       setDeleteLoading(false);
     }
@@ -113,10 +100,10 @@ export const Vendors: React.FC = () => {
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto w-full space-y-6">
       {/* Top Header matching Screen 4 wireframe */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#19281f]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#334155]">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Vendors</h2>
-          <p className="text-sm text-slate-400 mt-0.5">
+          <h2 className="text-2xl font-bold text-[#F8FAFC] tracking-tight">Vendors</h2>
+          <p className="text-sm text-[#94A3B8] mt-0.5">
             Manage supplier profiles and registrations
           </p>
         </div>
@@ -125,7 +112,7 @@ export const Vendors: React.FC = () => {
         {canCreate && (
           <button
             onClick={handleOpenAdd}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-emerald-950/40 transition-all self-start sm:self-auto"
+            className="px-4 py-2.5 bg-[#36C9A5] hover:bg-[#2db893] text-[#0B1220] rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm transition-all self-start sm:self-auto"
           >
             <Plus className="w-4 h-4" />
             + Add Vendor
@@ -134,15 +121,15 @@ export const Vendors: React.FC = () => {
       </div>
 
       {error && (
-        <div className="p-3 bg-rose-950/70 border border-rose-800/80 rounded-xl text-rose-300 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Search Bar matching Screen 4 wireframe */}
       <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#94A3B8]">
           <Search className="w-4 h-4" />
         </div>
         <input
@@ -150,12 +137,12 @@ export const Vendors: React.FC = () => {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search bar ..... search by name, gst number, category..."
-          className="w-full pl-10 pr-4 py-2.5 bg-[#101914] border border-[#213528] rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all shadow-inner"
+          className="w-full pl-10 pr-4 py-2.5 bg-[#111827] border border-[#334155] rounded-xl text-sm text-[#F8FAFC] placeholder-[#94A3B8]/60 focus:outline-none focus:border-[#36C9A5] focus:ring-1 focus:ring-[#36C9A5] transition-all"
         />
         {searchTerm && (
           <button
             onClick={() => setSearchTerm('')}
-            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-400 hover:text-white"
+            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-[#94A3B8] hover:text-[#F8FAFC]"
           >
             Clear
           </button>
@@ -164,13 +151,13 @@ export const Vendors: React.FC = () => {
 
       {/* Filter Tabs with Counts matching Screen 4: [All (28)] [Active (21)] [Pending (4)] [Blocked (3)] */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 p-1 bg-[#101914] border border-[#1e3025] rounded-xl text-xs overflow-x-auto">
+        <div className="flex items-center gap-1.5 p-1 bg-[#1E293B] border border-[#334155] rounded-xl text-xs overflow-x-auto">
           <button
             onClick={() => setActiveTab('all')}
             className={`px-3.5 py-1.5 rounded-lg font-medium transition-all ${
               activeTab === 'all'
-                ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-[#15231c]'
+                ? 'bg-[#36C9A5]/15 text-[#36C9A5] border border-[#36C9A5]/30 shadow-sm'
+                : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#273449]'
             }`}
           >
             All ({counts.all})
@@ -180,8 +167,8 @@ export const Vendors: React.FC = () => {
             onClick={() => setActiveTab('active')}
             className={`px-3.5 py-1.5 rounded-lg font-medium transition-all ${
               activeTab === 'active'
-                ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-[#15231c]'
+                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#273449]'
             }`}
           >
             Active ({counts.active})
@@ -191,8 +178,8 @@ export const Vendors: React.FC = () => {
             onClick={() => setActiveTab('pending')}
             className={`px-3.5 py-1.5 rounded-lg font-medium transition-all ${
               activeTab === 'pending'
-                ? 'bg-amber-900/60 text-amber-300 border border-amber-700/60 shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-[#15231c]'
+                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 shadow-sm'
+                : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#273449]'
             }`}
           >
             Pending ({counts.pending})
@@ -202,8 +189,8 @@ export const Vendors: React.FC = () => {
             onClick={() => setActiveTab('blocked')}
             className={`px-3.5 py-1.5 rounded-lg font-medium transition-all ${
               activeTab === 'blocked'
-                ? 'bg-rose-900/60 text-rose-300 border border-rose-700/60 shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-[#15231c]'
+                ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-sm'
+                : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#273449]'
             }`}
           >
             Blocked ({counts.blocked})
@@ -212,11 +199,11 @@ export const Vendors: React.FC = () => {
 
         {/* Category Dropdown */}
         <div className="flex items-center gap-2 text-xs">
-          <Filter className="w-3.5 h-3.5 text-slate-400" />
+          <Filter className="w-3.5 h-3.5 text-[#94A3B8]" />
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-1.5 bg-[#101914] border border-[#213528] rounded-lg text-xs text-slate-300 focus:outline-none focus:border-emerald-500"
+            className="px-3 py-1.5 bg-[#111827] border border-[#334155] rounded-lg text-xs text-slate-300 focus:outline-none focus:border-[#36C9A5]"
           >
             <option value="all">All Categories</option>
             <option value="Constructions">Constructions</option>
@@ -230,11 +217,11 @@ export const Vendors: React.FC = () => {
       </div>
 
       {/* Vendors Table matching Screen 4 wireframe */}
-      <div className="bg-[#121c17] border border-[#203327] rounded-xl overflow-hidden shadow-xl">
+      <div className="bg-[#1E293B] border border-[#334155] rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="bg-[#0e1612] border-b border-[#1f3025] text-slate-400 uppercase tracking-wider font-semibold">
+              <tr className="bg-[#0B1220] border-b border-[#334155] text-[#94A3B8] uppercase tracking-wider font-semibold text-[11px]">
                 <th className="py-3 px-4">Vendor Name</th>
                 <th className="py-3 px-4">Category</th>
                 <th className="py-3 px-4">GST no.</th>
@@ -243,23 +230,23 @@ export const Vendors: React.FC = () => {
                 <th className="py-3 px-4 text-center">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#18271e]">
+            <tbody className="divide-y divide-[#334155]/60">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <td colSpan={6} className="py-12 text-center text-[#94A3B8]">
                     <div className="flex flex-col items-center gap-2">
-                      <RefreshCw className="w-5 h-5 text-emerald-400 animate-spin" />
+                      <RefreshCw className="w-5 h-5 text-[#36C9A5] animate-spin" />
                       <span>Loading vendors registry...</span>
                     </div>
                   </td>
                 </tr>
               ) : vendors.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <td colSpan={6} className="py-12 text-center text-[#94A3B8]">
                     <div className="flex flex-col items-center gap-2">
-                      <FileX className="w-8 h-8 text-slate-600" />
+                      <FileX className="w-8 h-8 text-slate-500" />
                       <span className="font-semibold text-slate-300">No vendor records found</span>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-[#94A3B8]">
                         {searchTerm || activeTab !== 'all' || selectedCategory !== 'all'
                           ? 'Try adjusting your search query or status filter.'
                           : 'Click "+ Add Vendor" to onboard your first supplier.'}
@@ -271,20 +258,20 @@ export const Vendors: React.FC = () => {
                 vendors.map((vendor) => (
                   <tr
                     key={vendor.id}
-                    className="hover:bg-[#16251e]/80 transition-colors group cursor-pointer"
+                    className="hover:bg-[#273449]/50 transition-colors group cursor-pointer"
                     onClick={() => setViewingVendor(vendor)}
                   >
                     {/* Vendor Name */}
-                    <td className="py-3.5 px-4 font-semibold text-white">
+                    <td className="py-3.5 px-4 font-semibold text-[#F8FAFC]">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-950/70 border border-emerald-800/60 flex items-center justify-center text-emerald-400 shrink-0">
+                        <div className="w-7 h-7 rounded-lg bg-[#0B1220] border border-[#334155] flex items-center justify-center text-[#36C9A5] shrink-0">
                           <Building2 className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <div className="text-white hover:text-emerald-400 transition-colors">
+                          <div className="text-[#F8FAFC] group-hover:text-[#36C9A5] transition-colors">
                             {vendor.name}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-normal">
+                          <div className="text-[10px] text-[#94A3B8] font-normal">
                             {vendor.contactPerson}
                           </div>
                         </div>
@@ -295,14 +282,14 @@ export const Vendors: React.FC = () => {
                     <td className="py-3.5 px-4 text-slate-300 font-medium">{vendor.category}</td>
 
                     {/* GST no. */}
-                    <td className="py-3.5 px-4 font-mono font-medium text-emerald-400/90">
+                    <td className="py-3.5 px-4 font-mono font-medium text-[#36C9A5]">
                       {vendor.gstin}
                     </td>
 
                     {/* Contact no. */}
                     <td className="py-3.5 px-4 text-slate-300 font-mono">
                       <div>{vendor.phone}</div>
-                      <div className="text-[10px] text-slate-500 font-sans">{vendor.email}</div>
+                      <div className="text-[10px] text-[#94A3B8] font-sans">{vendor.email}</div>
                     </td>
 
                     {/* Status */}
@@ -319,7 +306,7 @@ export const Vendors: React.FC = () => {
                         <button
                           onClick={() => setViewingVendor(vendor)}
                           title="View profile"
-                          className="px-2.5 py-1 bg-[#182920] hover:bg-[#20362b] text-emerald-400 border border-[#264132] rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                          className="px-2.5 py-1 bg-[#0B1220] hover:bg-[#273449] text-[#36C9A5] border border-[#334155] rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
                         >
                           <Eye className="w-3 h-3" />
                           View
@@ -331,7 +318,7 @@ export const Vendors: React.FC = () => {
                           <button
                             onClick={() => handleOpenEdit(vendor)}
                             title="Edit vendor details"
-                            className="p-1 bg-[#182920] hover:bg-[#20362b] text-slate-300 border border-[#264132] rounded-lg transition-colors"
+                            className="p-1.5 bg-[#0B1220] hover:bg-[#273449] text-slate-300 border border-[#334155] rounded-lg transition-colors"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -341,7 +328,7 @@ export const Vendors: React.FC = () => {
                           <button
                             onClick={() => setDeletingVendor(vendor)}
                             title="Delete vendor (Admin only)"
-                            className="p-1 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/60 rounded-lg transition-colors"
+                            className="p-1.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/60 rounded-lg transition-colors"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -356,12 +343,12 @@ export const Vendors: React.FC = () => {
         </div>
 
         {/* Table Footer with Summary */}
-        <div className="px-4 py-3 bg-[#0d1511] border-t border-[#1b2b21] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
+        <div className="px-4 py-3 bg-[#0B1220] border-t border-[#334155] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#94A3B8]">
           <span>
-            Displaying <strong>{vendors.length}</strong> supplier{vendors.length === 1 ? '' : 's'} (
+            Displaying <strong className="text-[#F8FAFC]">{vendors.length}</strong> supplier{vendors.length === 1 ? '' : 's'} (
             {activeTab.toUpperCase()})
           </span>
-          <span className="text-[11px] text-slate-500">
+          <span className="text-[11px] text-[#94A3B8]">
             Database persistence active • Click any row for comprehensive compliance view
           </span>
         </div>
@@ -386,22 +373,22 @@ export const Vendors: React.FC = () => {
 
       {/* Delete Confirmation Safety Dialog */}
       {deletingVendor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-[#121c17] border border-rose-800/60 rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <div className="w-12 h-12 rounded-xl bg-rose-950/80 border border-rose-800/80 flex items-center justify-center text-rose-400 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0B1220]/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#1E293B] border border-rose-800/60 rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="w-12 h-12 rounded-xl bg-rose-950/60 border border-rose-800/60 flex items-center justify-center text-rose-400 mb-4">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-bold text-white">Delete Vendor Record?</h3>
-            <p className="text-xs text-slate-300 mt-2 leading-relaxed">
-              Are you sure you want to permanently delete <strong>{deletingVendor.name}</strong> (GSTIN:{' '}
-              <span className="font-mono text-emerald-400">{deletingVendor.gstin}</span>)? This action is
+            <h3 className="text-base font-bold text-[#F8FAFC]">Delete Vendor Record?</h3>
+            <p className="text-xs text-[#94A3B8] mt-2 leading-relaxed">
+              Are you sure you want to permanently delete <strong className="text-[#F8FAFC]">{deletingVendor.name}</strong> (GSTIN:{' '}
+              <span className="font-mono text-[#36C9A5]">{deletingVendor.gstin}</span>)? This action is
               restricted to Administrators and will be recorded in the audit log.
             </p>
             <div className="flex justify-end gap-3 mt-6">
               <button
                 type="button"
                 onClick={() => setDeletingVendor(null)}
-                className="px-4 py-2 text-xs text-slate-400 hover:text-white rounded-lg hover:bg-[#1a2b20]"
+                className="px-4 py-2 text-xs text-[#94A3B8] hover:text-[#F8FAFC] rounded-lg hover:bg-[#273449] transition-colors"
               >
                 Cancel
               </button>
@@ -409,7 +396,7 @@ export const Vendors: React.FC = () => {
                 type="button"
                 disabled={deleteLoading}
                 onClick={handleDeleteConfirm}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg shadow-lg shadow-rose-950/50 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
                 {deleteLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                 Confirm Deletion

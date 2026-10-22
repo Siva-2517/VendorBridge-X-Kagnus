@@ -7,7 +7,7 @@ export interface AuthenticatedRequest extends Request {
   user?: User;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'vendorbridge_super_secure_jwt_secret_key_at_least_32_chars_long';
+import { getJwtSecret } from '../controllers/authController';
 
 export const authenticate = async (
   req: AuthenticatedRequest,
@@ -31,7 +31,7 @@ export const authenticate = async (
       return;
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string; role: Role };
+    const decoded = jwt.verify(token, getJwtSecret()) as { id: string; email: string; role: Role };
 
     const user = await db.findUserById(decoded.id);
     if (!user || !user.isActive) {

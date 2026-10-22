@@ -8,3 +8,4 @@ build/
 coverage/
 prisma/*.db
 prisma/*.db-journal
+*.backup

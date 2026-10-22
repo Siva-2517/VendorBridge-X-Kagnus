@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Role } from '../types';
+import { api, ApiError } from '../api/client';
 
 interface AuthContextType {
   user: User | null;
@@ -8,6 +9,8 @@ interface AuthContextType {
   register: (data: any) => Promise<{ success: boolean; error?: string; details?: any }>;
   logout: () => Promise<void>;
   switchDemoRole: (role: Role) => Promise<void>;
+  refreshUser: () => Promise<void>;
+  updateLocalUser: (updated: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -18,16 +21,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchCurrentUser = async () => {
     try {
-      const res = await fetch('/api/auth/me', {
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      } else {
-        setUser(null);
-      }
+      const data = await api.get<{ user: User }>('/api/auth/me');
+      setUser(data.user);
     } catch (err) {
       setUser(null);
     } finally {
@@ -39,60 +34,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchCurrentUser();
   }, []);
 
+  const refreshUser = async () => {
+    await fetchCurrentUser();
+  };
+
+  const updateLocalUser = (updated: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...updated } : null));
+  };
+
   const login = async (email: string, password: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.message || 'Login failed' };
-      }
+      const data = await api.post<{ user: User }>('/api/auth/login', { email, password });
       setUser(data.user);
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: 'Network error or server unavailable' };
+      const errorMsg = err instanceof ApiError ? err.message : 'Network error or server unavailable';
+      return { success: false, error: errorMsg };
     }
   };
 
   const register = async (formData: any) => {
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(formData),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return {
-          success: false,
-          error: data.message || 'Registration failed',
-          details: data.details,
-        };
-      }
+      const data = await api.post<{ user: User }>('/api/auth/register', formData);
       setUser(data.user);
       return { success: true };
     } catch (err: any) {
+      if (err instanceof ApiError) {
+        return {
+          success: false,
+          error: err.message || 'Registration failed',
+          details: err.data?.details,
+        };
+      }
       return { success: false, error: 'Network error or server unavailable' };
     }
   };
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await api.post('/api/auth/logout');
+    } catch (err) {
+      console.warn('Logout request encountered an issue:', err);
     } finally {
       setUser(null);
     }
   };
 
   const switchDemoRole = async (targetRole: Role) => {
+    if (!import.meta.env.DEV) {
+      console.warn('Role switching is disabled in production builds');
+      return;
+    }
     const roleMap: Record<Role, string> = {
       ADMIN: 'admin@vendorbridge.com',
       PROCUREMENT_OFFICER: 'officer@vendorbridge.com',
@@ -103,7 +95,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, switchDemoRole }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, register, logout, switchDemoRole, refreshUser, updateLocalUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

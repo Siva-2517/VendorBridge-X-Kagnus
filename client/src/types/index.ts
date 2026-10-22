@@ -12,6 +12,8 @@ export interface User {
   country?: string | null;
   additionalInfo?: string | null;
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Vendor {
@@ -54,11 +56,18 @@ export interface DashboardData {
     lastName: string;
     role: Role;
   };
+  vendorProfile?: Vendor | null;
   metrics: {
     activeRfqs: number;
     pendingApprovals: number;
     monthlyPoSpend: string;
+    monthlyPoSpendRaw?: number;
     overdueInvoices: number;
+    totalUsers?: number;
+    activeSuppliers?: number;
+    pendingVerifications?: number;
+    totalOrdersCount?: number;
+    verificationStatus?: string;
   };
   vendorCounts: VendorCounts;
   recentPurchaseOrders: RecentPO[];

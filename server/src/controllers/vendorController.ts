@@ -154,10 +154,19 @@ export const updateVendor = async (req: AuthenticatedRequest, res: Response): Pr
     }
 
     // Vendors cannot change their own approval status
-    if (user.role === Role.VENDOR && data.status && data.status !== existingVendor.status) {
+    if (user.role === Role.VENDOR && data.status !== undefined) {
       res.status(403).json({
         error: 'Forbidden',
-        message: 'Vendors are not permitted to modify their own verification status',
+        message: 'Vendors are not permitted to modify their verification status',
+      });
+      return;
+    }
+
+    // Vendors cannot modify restricted business identifiers such as GSTIN
+    if (user.role === Role.VENDOR && data.gstin !== undefined) {
+      res.status(403).json({
+        error: 'Forbidden',
+        message: 'Vendors are not permitted to modify their registered GSTIN identifier. Please contact procurement administration.',
       });
       return;
     }
@@ -193,6 +202,16 @@ export const deleteVendor = async (req: AuthenticatedRequest, res: Response): Pr
     const existingVendor = await db.findVendorById(id);
     if (!existingVendor) {
       res.status(404).json({ error: 'Not found', message: 'Vendor record not found' });
+      return;
+    }
+
+    // Historical record protection: verify vendor has no associated purchase orders
+    const poCount = await db.getVendorPurchaseOrderCount(id);
+    if (poCount > 0) {
+      res.status(400).json({
+        error: 'Integrity constraint violation',
+        message: `Cannot delete vendor '${existingVendor.name}' because ${poCount} associated purchase order(s) exist in procurement history. Please change vendor status to BLOCKED instead to maintain audit compliance.`,
+      });
       return;
     }
 

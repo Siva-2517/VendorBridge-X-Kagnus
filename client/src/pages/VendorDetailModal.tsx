@@ -34,14 +34,14 @@ export const VendorDetailModal: React.FC<VendorDetailModalProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} title="Vendor Profile & Compliance Details" maxWidth="max-w-xl">
       <div className="space-y-6">
         {/* Header Header Info */}
-        <div className="flex items-start justify-between bg-[#14231b] border border-[#21382b] rounded-xl p-4">
+        <div className="flex items-start justify-between bg-[#0B1220] border border-[#334155] rounded-xl p-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-emerald-950/80 border border-emerald-700/60 flex items-center justify-center text-emerald-400 font-bold">
+            <div className="w-12 h-12 rounded-xl bg-[#1E293B] border border-[#334155] flex items-center justify-center text-[#36C9A5] font-bold">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
-              <h4 className="text-base font-bold text-white tracking-wide">{vendor.name}</h4>
-              <p className="text-xs text-slate-400">Category: <span className="text-emerald-400 font-medium">{vendor.category}</span></p>
+              <h4 className="text-base font-bold text-[#F8FAFC] tracking-wide">{vendor.name}</h4>
+              <p className="text-xs text-[#94A3B8]">Category: <span className="text-[#36C9A5] font-medium">{vendor.category}</span></p>
             </div>
           </div>
           <Badge status={vendor.status} />
@@ -49,18 +49,18 @@ export const VendorDetailModal: React.FC<VendorDetailModalProps> = ({
 
         {/* GSTIN & Registration Box */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="p-3 bg-[#0d1612] border border-[#1c2c22] rounded-lg">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-1">
-              <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="p-3 bg-[#0B1220] border border-[#334155] rounded-lg">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5 mb-1">
+              <FileCheck className="w-3.5 h-3.5 text-[#36C9A5]" />
               GST Number (GSTIN)
             </span>
-            <span className="text-sm font-mono font-bold text-emerald-400">{vendor.gstin}</span>
-            <p className="text-[10px] text-slate-500 mt-0.5">Verified Indian GST registration</p>
+            <span className="text-sm font-mono font-bold text-[#36C9A5]">{vendor.gstin}</span>
+            <p className="text-[10px] text-[#94A3B8] mt-0.5">Verified Indian GST registration</p>
           </div>
 
-          <div className="p-3 bg-[#0d1612] border border-[#1c2c22] rounded-lg">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 mb-1">
-              <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="p-3 bg-[#0B1220] border border-[#334155] rounded-lg">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5 mb-1">
+              <Calendar className="w-3.5 h-3.5 text-[#36C9A5]" />
               Registered On
             </span>
             <span className="text-xs text-slate-200">
@@ -74,22 +74,22 @@ export const VendorDetailModal: React.FC<VendorDetailModalProps> = ({
         </div>
 
         {/* Primary Contact Person */}
-        <div className="p-4 bg-[#0d1612] border border-[#1c2c22] rounded-xl space-y-2.5">
-          <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <User className="w-3.5 h-3.5 text-emerald-400" />
+        <div className="p-4 bg-[#0B1220] border border-[#334155] rounded-xl space-y-2.5">
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5">
+            <User className="w-3.5 h-3.5 text-[#36C9A5]" />
             Authorized Contact Representative
           </h5>
-          <div className="text-sm font-semibold text-white">{vendor.contactPerson}</div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">{vendor.contactPerson}</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
             <div className="flex items-center gap-2 text-slate-300">
-              <Mail className="w-3.5 h-3.5 text-slate-500" />
-              <a href={`mailto:${vendor.email}`} className="hover:text-emerald-400 transition-colors">
+              <Mail className="w-3.5 h-3.5 text-[#94A3B8]" />
+              <a href={`mailto:${vendor.email}`} className="hover:text-[#36C9A5] transition-colors">
                 {vendor.email}
               </a>
             </div>
             <div className="flex items-center gap-2 text-slate-300">
-              <Phone className="w-3.5 h-3.5 text-slate-500" />
-              <a href={`tel:${vendor.phone}`} className="hover:text-emerald-400 transition-colors">
+              <Phone className="w-3.5 h-3.5 text-[#94A3B8]" />
+              <a href={`tel:${vendor.phone}`} className="hover:text-[#36C9A5] transition-colors">
                 {vendor.phone}
               </a>
             </div>
@@ -97,9 +97,9 @@ export const VendorDetailModal: React.FC<VendorDetailModalProps> = ({
         </div>
 
         {/* Business Operating Address */}
-        <div className="p-4 bg-[#0d1612] border border-[#1c2c22] rounded-xl space-y-1.5">
-          <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+        <div className="p-4 bg-[#0B1220] border border-[#334155] rounded-xl space-y-1.5">
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8] flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-[#36C9A5]" />
             Operating Address
           </h5>
           <p className="text-xs text-slate-300 leading-relaxed">
@@ -113,8 +113,8 @@ export const VendorDetailModal: React.FC<VendorDetailModalProps> = ({
 
         {/* Notes / Remarks */}
         {vendor.notes && (
-          <div className="p-3 bg-[#0d1612] border border-[#1c2c22] rounded-lg">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1">
+          <div className="p-3 bg-[#0B1220] border border-[#334155] rounded-lg">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] block mb-1">
               Supplier Notes & Observations
             </span>
             <p className="text-xs text-slate-300 italic">{vendor.notes}</p>
@@ -122,12 +122,12 @@ export const VendorDetailModal: React.FC<VendorDetailModalProps> = ({
         )}
 
         {/* Modal Actions */}
-        <div className="flex justify-between items-center pt-3 border-t border-[#1a2b21]">
-          <span className="text-[10px] text-slate-500">ID: {vendor.id}</span>
+        <div className="flex justify-between items-center pt-3 border-t border-[#334155]">
+          <span className="text-[10px] text-[#94A3B8]">ID: {vendor.id}</span>
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-slate-400 hover:text-white rounded-lg hover:bg-[#1a2b20]"
+              className="px-3 py-1.5 text-xs text-[#94A3B8] hover:text-[#F8FAFC] rounded-lg hover:bg-[#273449] transition-colors"
             >
               Close
             </button>
@@ -137,7 +137,7 @@ export const VendorDetailModal: React.FC<VendorDetailModalProps> = ({
                   onClose();
                   onEdit(vendor);
                 }}
-                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
+                className="px-4 py-1.5 bg-[#36C9A5] hover:bg-[#2db893] text-[#0B1220] text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
               >
                 <Edit className="w-3.5 h-3.5" />
                 Edit Profile

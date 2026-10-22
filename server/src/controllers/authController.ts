@@ -4,11 +4,30 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../db/store';
 import { Role } from '../types';
-import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from '../utils/validation';
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
+  updateProfileSchema,
+} from '../utils/validation';
 import { AuthenticatedRequest } from '../middleware/auth';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'vendorbridge_super_secure_jwt_secret_key_at_least_32_chars_long';
-const ADMIN_INVITE_CODE = process.env.ADMIN_INVITE_CODE || 'ADMIN_SECURE_SETUP_2025';
+export const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL SECURITY CONFIGURATION: JWT_SECRET must be defined in production environment');
+    }
+    return 'vendorbridge_dev_secret_key_change_in_production_32chars';
+  }
+  return secret;
+};
+
+const getAdminInviteCode = (): string | undefined => {
+  return process.env.ADMIN_INVITE_CODE;
+};
 
 const sanitizeUser = (user: any) => {
   const { passwordHash, ...safeUser } = user;
@@ -18,7 +37,7 @@ const sanitizeUser = (user: any) => {
 const sendTokenResponse = (res: Response, user: any, statusCode = 200) => {
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '7d' }
   );
 
@@ -61,15 +80,15 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Privilege escalation protection
     let assignedRole: Role = Role.VENDOR;
     if (role && role !== Role.VENDOR) {
-      if (inviteCode && inviteCode === ADMIN_INVITE_CODE) {
-        assignedRole = role;
-      } else {
+      const validCode = getAdminInviteCode();
+      if (!validCode || !inviteCode || inviteCode !== validCode) {
         res.status(403).json({
           error: 'Privilege escalation rejected',
           message: 'Valid organization authorization code required to register for privileged roles',
         });
         return;
       }
+      assignedRole = role;
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -131,9 +150,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 };
 
 export const logout = async (_req: Request, res: Response): Promise<void> => {
+  const isProduction = process.env.NODE_ENV === 'production';
   res.clearCookie('token', {
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
   });
   res.status(200).json({ success: true, message: 'Logged out successfully' });
 };
@@ -219,3 +240,93 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ error: 'Server error', message: 'Failed to reset password' });
   }
 };
+
+export const changePassword = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+      return;
+    }
+
+    const parseResult = changePasswordSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({
+        error: 'Validation failed',
+        details: parseResult.error.flatten().fieldErrors,
+      });
+      return;
+    }
+
+    const { currentPassword, newPassword } = parseResult.data;
+    const user = await db.findUserById(req.user.id);
+    if (!user) {
+      res.status(404).json({ error: 'Not found', message: 'User account not found' });
+      return;
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isMatch) {
+      res.status(400).json({ error: 'Incorrect password', message: 'Current password does not match' });
+      return;
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    await db.updateUser(user.id, { passwordHash });
+    await db.logAudit(user.id, user.email, 'PASSWORD_CHANGED', 'User updated password via profile settings');
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Server error', message: 'Failed to update password' });
+  }
+};
+
+export const updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Authentication required' });
+      return;
+    }
+
+    const parseResult = updateProfileSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({
+        error: 'Validation failed',
+        details: parseResult.error.flatten().fieldErrors,
+      });
+      return;
+    }
+
+    // Explicitly pick only safe editable fields - prevent privilege escalation on role or email!
+    const { firstName, lastName, phoneNumber, country, additionalInfo } = parseResult.data;
+    const updates: any = {};
+    if (firstName !== undefined) updates.firstName = firstName;
+    if (lastName !== undefined) updates.lastName = lastName;
+    if (phoneNumber !== undefined) updates.phoneNumber = phoneNumber;
+    if (country !== undefined) updates.country = country;
+    if (additionalInfo !== undefined) updates.additionalInfo = additionalInfo;
+
+    const updatedUser = await db.updateUser(req.user.id, updates);
+    if (!updatedUser) {
+      res.status(404).json({ error: 'Not found', message: 'User account not found' });
+      return;
+    }
+
+    await db.logAudit(updatedUser.id, updatedUser.email, 'PROFILE_UPDATED', 'User updated profile details');
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: sanitizeUser(updatedUser),
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Server error', message: 'Failed to update profile' });
+  }
+};
+

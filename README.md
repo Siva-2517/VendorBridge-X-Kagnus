@@ -39,6 +39,11 @@ VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise R
 - **Permitted Quick Actions**: Contextual shortcuts (`+ Add Vendor`, `+ new RFQ`, `Review Approvals`, `View Invoices`, `Submit Quotation`).
 - **Honest Future-Module Placeholders**: Informative previews for modules scheduled for Weeks 2–4 (RFQs, Quotations, Approvals, Purchase Orders, Invoices, Reports, Audit Logs).
 
+### Public Landing Page & Deployment
+- **Public Homepage (`/`)**: Interactive product showcase featuring live role capabilities, workflow architecture, security assurances, and direct access to authentication.
+- **Production Deployment Ready**: Pre-configured for deployment with **Frontend on Vercel** (`client/vercel.json` SPA rewrites) and **Backend on Render** (`render.yaml` Blueprint).
+- **Dual-Mode Cross-Domain Authentication**: Supports secure cross-site cookies (`SameSite=None; Secure`) and `Authorization: Bearer <token>` fallback, guaranteeing seamless authentication between Vercel and Render domains.
+
 ---
 
 ## 2. Technology Stack

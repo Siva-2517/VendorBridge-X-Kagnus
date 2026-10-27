@@ -147,10 +147,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
     name: 'RFQs',
     path: '/rfqs',
     icon: FileText,
-    badge: 'W2',
-    allowedRoles: ['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER'],
   },
-  { name: 'Quotations', path: '/quotations', icon: FileSpreadsheet, badge: 'W2' },
+  { name: 'Quotations', path: '/quotations', icon: FileSpreadsheet },
   {
     name: 'Approvals',
     path: '/approvals',
@@ -257,7 +255,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
                     <span className="w-1.5 h-1.5 rounded-full bg-[#36C9A5] animate-pulse shrink-0"></span>
                   </h1>
                   <p className="text-[10px] text-[#94A3B8] uppercase tracking-widest font-semibold truncate">
-                    ERP Suite • Week 1
+                    ERP Suite • Week 2
                   </p>
                 </div>
               </div>
@@ -602,7 +600,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
             {/* System Version & Milestone Pill */}
             <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1E293B] border border-[#334155] text-[11px] text-[#94A3B8]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#36C9A5]/80"></span>
-              <span>ERP Suite • Week 1</span>
+              <span>ERP Suite • Week 2</span>
             </div>
 
             {/* Notification Bell */}

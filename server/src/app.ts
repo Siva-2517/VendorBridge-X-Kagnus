@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes';
 import vendorRoutes from './routes/vendorRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
+import rfqRoutes from './routes/rfqRoutes';
+import quotationRoutes from './routes/quotationRoutes';
 
 dotenv.config();
 
@@ -59,6 +61,8 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/rfqs', rfqRoutes);
+app.use('/api/quotations', quotationRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

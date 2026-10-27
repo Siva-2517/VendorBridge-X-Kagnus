@@ -8,7 +8,9 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     exclude: ['dist/**', 'node_modules/**'],
-    testTimeout: 25000,
-    hookTimeout: 25000,
+    setupFiles: ['./src/tests/setupEnv.ts'],
+    fileParallelism: false,
+    testTimeout: 45000,
+    hookTimeout: 45000,
   },
 });

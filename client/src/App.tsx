@@ -7,6 +7,9 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
 import { Vendors } from './pages/Vendors';
+import { Rfqs } from './pages/Rfqs';
+import { RfqDetail } from './pages/RfqDetail';
+import { Quotations } from './pages/Quotations';
 import { Profile } from './pages/Profile';
 import { FutureModulePlaceholder } from './components/common/FutureModulePlaceholder';
 import { AccessDenied } from './components/common/AccessDenied';
@@ -77,45 +80,12 @@ export const App: React.FC = () => {
             />
             <Route path="profile" element={<Profile />} />
 
-            {/* Honest Empty States for Scheduled Future Modules */}
-            <Route
-              path="rfqs"
-              element={
-                <RoleRouteGuard
-                  allowedRoles={['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER']}
-                  resourceName="Request for Quotations (RFQ)"
-                >
-                  <FutureModulePlaceholder
-                    moduleName="Request for Quotations (RFQ)"
-                    scheduledWeek="Week 2"
-                    description="Create, structure, and dispatch multi-line RFQ packages to invited and verified vendor partners."
-                    features={[
-                      'Multi-line item requisition tables',
-                      'Vendor dispatch and notification list',
-                      'RFQ submission deadlines and tracking',
-                      'Category-based vendor matching',
-                    ]}
-                  />
-                </RoleRouteGuard>
-              }
-            />
+            {/* Week 2 Live Production Modules */}
+            <Route path="rfqs" element={<Rfqs />} />
+            <Route path="rfqs/:id" element={<RfqDetail />} />
+            <Route path="quotations" element={<Quotations />} />
 
-            <Route
-              path="quotations"
-              element={
-                <FutureModulePlaceholder
-                  moduleName="Quotations & Comparison Matrix"
-                  scheduledWeek="Week 2"
-                  description="Supplier bidding portal and side-by-side quotation comparison matrix with automated L1 recommendation."
-                  features={[
-                    'Supplier bid submission interface',
-                    'Side-by-side cost and delivery matrix',
-                    'L1 lowest-price vendor calculation',
-                    'Comparative tax and freight breakdown',
-                  ]}
-                />
-              }
-            />
+            {/* Honest Empty States for Scheduled Future Modules */}
 
             <Route
               path="approvals"

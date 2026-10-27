@@ -1,16 +1,28 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
 import { prisma } from '../db/prisma';
+import { isSafeTestDatabaseConfigured } from './testDbGuard';
 
-describe('VendorBridge Backend API & Security Suite', () => {
+const isSafeDb = isSafeTestDatabaseConfigured();
+
+describe.skipIf(!isSafeDb)('VendorBridge Backend API & Security Suite [MUTATING - REQUIRES TEST_DATABASE_URL]', () => {
   let adminCookie: string;
   let officerCookie: string;
   let createdVendorId: string;
+  const createdUserIds: string[] = [];
 
   beforeAll(async () => {
-    // Ensure cloud database connection pool is warm before tests run
-    await prisma.$connect();
+    // Ensure cloud database connection pool is warm before tests run (handles Neon serverless wake-up)
+    for (let i = 0; i < 4; i++) {
+      try {
+        await prisma.$connect();
+        break;
+      } catch (err) {
+        if (i === 3) throw err;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
   });
 
   // 1. Authentication Tests
@@ -96,6 +108,7 @@ describe('VendorBridge Backend API & Security Suite', () => {
       expect(res.status).toBe(201);
       expect(res.body.user.role).toBe('VENDOR');
       expect(res.body.user.email).toBe(uniqueEmail);
+      if (res.body?.user?.id) createdUserIds.push(res.body.user.id);
     });
 
     it('should reject duplicate email registration', async () => {
@@ -118,12 +131,13 @@ describe('VendorBridge Backend API & Security Suite', () => {
 
     it('should handle password reset request and completion for a user', async () => {
       const resetEmail = `reset_${Date.now()}@example.com`;
-      await request(app).post('/api/auth/register').send({
+      const regRes = await request(app).post('/api/auth/register').send({
         firstName: 'Reset',
         lastName: 'User',
         email: resetEmail,
         password: 'OriginalPassword123!',
       });
+      if (regRes.body?.user?.id) createdUserIds.push(regRes.body.user.id);
 
       const res = await request(app)
         .post('/api/auth/forgot-password')
@@ -508,5 +522,21 @@ describe('VendorBridge Backend API & Security Suite', () => {
         });
       expect(managerRes.status).toBe(403);
     });
+  });
+
+  afterAll(async () => {
+    try {
+      if (createdVendorId) {
+        await prisma.vendor.deleteMany({ where: { id: createdVendorId } });
+      }
+      if (createdUserIds.length > 0) {
+        await prisma.passwordResetToken.deleteMany({ where: { userId: { in: createdUserIds } } });
+        await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
+      }
+    } catch (err) {
+      console.warn('Test user cleanup warning:', err);
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 });

@@ -1,67 +1,63 @@
 # VendorBridge — Procurement & Vendor Management ERP
-### Week 1: Foundation & Vendor Management
+### Week 1 & Week 2: Foundation, Vendor Management, RFQ & Quotation Management
 
-VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise Resource Planning (ERP) platform designed to streamline supplier onboarding, verification, request for quotations (RFQs), multi-tier approvals, purchase orders, and 3-way matching.
+VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise Resource Planning (ERP) platform designed to streamline supplier onboarding, verification, request for quotations (RFQs), quotation comparison, multi-tier approvals, purchase orders, and 3-way matching.
 
 > [!NOTE]
 > ### 🌐 Live Production Deployment
 > - **Live Frontend (Vercel):** [https://vendorbridge-gilt.vercel.app/](https://vendorbridge-gilt.vercel.app/)
 > - **Live Backend API (Render):** [https://vendorbridge-s1qv.onrender.com](https://vendorbridge-s1qv.onrender.com)
 > - **API Health Check:** [https://vendorbridge-s1qv.onrender.com/api/health](https://vendorbridge-s1qv.onrender.com/api/health)
-> - **Cloud Database:** Neon Serverless PostgreSQL (US-East-2)
+> - **Cloud Database:** Neon Serverless PostgreSQL (US-East-2 / AP-Southeast-1)
 
 ---
 
-## 1. Overview & Week 1 Features
+## 1. Overview & Delivered Capabilities
 
-### Authentication & User Management
-- **Full Authentication Flow**: User registration, login, persistent session handling via secure HTTP-only cookies (with JWT fallback), and logout.
-- **Role-Based Access Control (RBAC)**: Centralized authorization model with four distinct roles:
+### Week 1: Foundation & Vendor Management
+- **Full Authentication Flow**: Persistent sessions via secure HTTP-only cookies with JWT fallback for seamless cross-domain support.
+- **Role-Based Access Control (RBAC)**: Centralized authorization model with 4 distinct roles:
   1. `ADMIN` (System Administrator)
   2. `PROCUREMENT_OFFICER` (Procurement Lead)
   3. `MANAGER_APPROVER` (Finance & Approval Reviewer)
   4. `VENDOR` (Supplier Partner)
-- **Privilege Escalation Protection**: Public registration defaults strictly to `VENDOR`. Creating elevated accounts requires an organization setup code (`ADMIN_SECURE_SETUP_2025`).
-- **Secure Password Reset**: Single-use, expiring token generation and reset workflow.
+- **Vendor Management Module (Screen 4)**: Full CRUD, Indian GSTIN validation (`^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$`), search & category filters, status tabs with counters (`Active`, `Pending`, `Blocked`), and audit-protected deletion rules (`onDelete: Restrict`).
+- **Role-Tailored Procurement Dashboard (Screen 3)**: Contextual metric cards and strict vendor data isolation (vendors only see their own awarded purchase orders and statistics).
 
-### Vendor Management Module (Screen 4)
-- **Full Vendor CRUD**: Create, read, update, and safely delete supplier records.
-- **15-Character GSTIN Validation**: Form validation enforcing standard Indian Goods and Services Tax Identification Number (GSTIN) syntax (`^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$`).
-- **Dynamic Search & Filtering**: Multi-field search across vendor name, GSTIN, category, contact person, phone, and email.
-- **Status Tabs with Real-Time Counters**: Filter by `All (28)`, `Active (21)`, `Pending (4)`, and `Blocked (3)`.
-- **Compliance & Profile Inspector**: Modal drawer displaying operating address, primary contact representative, tax compliance notes, and timestamps.
-- **Administrative Protection**: Destructive deletion is restricted exclusively to the `ADMIN` role with an explicit safety confirmation dialog.
-
-### Role-Tailored Procurement Dashboard (Screen 3)
-- **Role-Aware Context Banner**: Welcome banner and server-generated status notice tailored to the user's active role.
-- **Role-Tailored Metric Cards**:
-  - **Admin**: System Users (4), Registered Vendors (28: 21 Active, 4 Pending), Total PO Spend (₹3.02L), Pending Approvals (1).
-  - **Procurement Officer**: Active Suppliers (21), Pending Verifications (4), Live PO Commitments (₹3.02L), Active RFQs (12).
-  - **Manager / Approver**: Pending Approvals Queue (1), Approved Spend (₹3.02L), Active Suppliers (21), Overdue Invoices (3).
-  - **Vendor Partner**: Dedicated Company Profile Card (Legal Entity, GSTIN, PAN, Category, Address, Contact), Company Status (`ACTIVE`), Orders Awarded, Awarded PO Value, RFQ Invitations.
-- **Strict Vendor Data Isolation**:
-  - Vendor dashboard displays **only** purchase orders awarded to that vendor's organization (`Infra Supplies Pvt Ltd`).
-  - Competitor orders are never leaked in tables, totals, or trends.
-- **Spending Trends Chart**: 6-month historical purchase and revenue visualization.
-- **Permitted Quick Actions**: Contextual shortcuts (`+ Add Vendor`, `+ new RFQ`, `Review Approvals`, `View Invoices`, `Submit Quotation`).
-- **Honest Future-Module Placeholders**: Informative previews for modules scheduled for Weeks 2–4 (RFQs, Quotations, Approvals, Purchase Orders, Invoices, Reports, Audit Logs).
-
-### Public Landing Page & Deployment
-- **Public Homepage (`/`)**: Interactive product showcase featuring live role capabilities, workflow architecture, security assurances, and direct access to authentication.
-- **Production Deployment**:
-  - **Frontend:** Hosted on Vercel at [https://vendorbridge-gilt.vercel.app/](https://vendorbridge-gilt.vercel.app/) with client-side SPA routing (`client/vercel.json`).
-  - **Backend:** Hosted on Render at [https://vendorbridge-s1qv.onrender.com](https://vendorbridge-s1qv.onrender.com) using the [render.yaml](render.yaml) blueprint.
-  - **Database:** Neon Serverless PostgreSQL with persistent data models.
-- **Dual-Mode Cross-Domain Authentication**: Supports secure cross-site cookies (`SameSite=None; Secure`) and `Authorization: Bearer <token>` fallback, guaranteeing seamless authentication between Vercel and Render domains.
+### Week 2: RFQ & Quotation Management
+- **RFQ Creation & Management (Screen 5)**:
+  - Procurement Officers can create structured RFQs with delivery locations, binding deadlines, multi-item Bill of Materials (BOM), and vendor assignments.
+  - Multi-item table with Item Description, Quantity, Unit of Measure (UOM), and optional Target Price.
+  - Multi-vendor invitation selector with supplier category and GSTIN preview chips.
+  - Real-time status lifecycle: `DRAFT`, `OPEN`, `CLOSED`, `AWARDED`, `CANCELLED`.
+- **Vendor Bidding & Draft Workflow (Screen 6)**:
+  - Invited vendors receive isolated access to assigned RFQs. Uninvited vendors are strictly rejected (`403 Forbidden`).
+  - Itemized bidding grid with Unit Price, Line Totals, and Delivery Lead Days per line item.
+  - Persistent Drafts: Vendors can save drafts (`DRAFT` status) and finalize bids (`SUBMITTED` status) before the deadline.
+  - **Real-Time Deadline Guard**: Server-side validation actively rejects bids if `new Date() >= rfq.deadline`—independent of background cron jobs.
+  - Live summary card calculating Taxable Subtotal, GST Tax Amount, and Grand Total.
+- **Side-by-Side Quotation Comparison Matrix (Screen 7)**:
+  - Side-by-side comparative table of all submitted vendor bids for any RFQ.
+  - **Authoritative Decimal Financials**: Handled with PostgreSQL `numeric(12, 2)` / Prisma Decimal arithmetic to eliminate IEEE 754 floating-point inaccuracies.
+  - **Automated L1 Lowest Price Badge**: Highlighting the lowest evaluated bid in distinct teal styling (`L1 Lowest Bidder`), with deterministic tie-breaking for equal prices.
+  - **Vendor Rating Indicators**: Displays vendor performance ratings (e.g., `4.8 ★`) or an honest `"Not yet rated"` indicator when history is not yet established.
+  - **Competitor Isolation**: Vendors are strictly forbidden from viewing the comparison screen or competitor quotations.
+- **Selected Quotation Integrity ("Select for Approval")**:
+  - Procurement Officers can select a winning quotation via an atomic single-select database transaction.
+  - Validates that the selected quotation strictly belongs to the target RFQ.
+  - Updates the quotation to `SELECTED` and sets `selectedQuotationId` on the RFQ, cleanly staging the record for Week 3 Multi-Tier Approvals without preemptively approving it.
+- **Persistent Binary Attachments**:
+  - PostgreSQL byte storage (`Bytes` data type) ensures technical specifications and BOM sheets persist reliably across serverless/ephemeral deployments.
+  - Validates MIME whitelist (`application/pdf`, images, text/plain) and 5MB payload limits with role-scoped download authorization.
 
 ---
 
 ## 2. Technology Stack
 
 - **Frontend**: React 18, TypeScript, Tailwind CSS (Slate-Navy `#111827`/`#0B1220` & Muted-Teal `#36C9A5`), Lucide React, React Router v6, Vite.
-- **Backend**: Node.js, Express, TypeScript, Zod, bcryptjs, jsonwebtoken, cookie-parser, cors, helmet, express-rate-limit.
-- **Database & ORM**: PostgreSQL (Cloud Neon Serverless) via Prisma ORM.
-- **Testing**: Vitest & Supertest with 28 automated integration tests.
+- **Backend**: Node.js, Express, TypeScript, Zod, Multer, bcryptjs, jsonwebtoken, cookie-parser, cors, helmet, express-rate-limit.
+- **Database & ORM**: Cloud PostgreSQL (Neon Serverless) via Prisma ORM (`Decimal(12, 2)` financial precision, `Bytes` file storage, `SystemSequence` atomic counters).
+- **Testing**: Vitest & Supertest with 42 automated integration tests across Week 1 and Week 2 suites.
 
 ---
 
@@ -76,15 +72,17 @@ d:\Kagnus/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── prisma/
-│   │   ├── schema.prisma     # PostgreSQL Prisma models
-│   │   └── seed.ts           # Database migration & seed script
+│   │   ├── schema.prisma     # PostgreSQL Prisma models (Decimal, Restrictive FKs, Bytes)
+│   │   └── seed.ts           # Migration and Excalidraw baseline seed data
 │   └── src/
 │       ├── types/            # TypeScript domain interfaces & enums
 │       ├── utils/            # Zod validation & GSTIN schemas
-│       ├── middleware/       # JWT auth & RBAC authorization guards
-│       ├── controllers/      # Auth, Vendor, and Dashboard controllers
-│       ├── routes/           # REST endpoint routers
-│       ├── tests/            # Vitest integration test suite (28 tests)
+│       ├── middleware/       # JWT auth, upload (Multer 5MB), RBAC guards
+│       ├── controllers/      # Auth, Vendor, RFQ, Quotation, and Dashboard controllers
+│       ├── routes/           # REST routers (/api/auth, /api/vendors, /api/rfqs, /api/quotations)
+│       ├── tests/            # Vitest integration test suites (42 tests)
+│       │   ├── auth_vendor.test.ts      # Week 1 tests (28 passed)
+│       │   └── rfq_quotation.test.ts    # Week 2 tests (14 passed)
 │       ├── app.ts            # Express application setup
 │       └── index.ts          # Server entry point
 └── client/                   # Frontend React & Tailwind application
@@ -93,10 +91,13 @@ d:\Kagnus/
     ├── tailwind.config.js    # Custom ERP dark palette
     └── src/
         ├── types/            # Frontend interfaces
-        ├── context/          # AuthContext with session persistence
-        ├── api/              # Centralized typed API client
-        ├── components/       # Layout, Navbar, Badges, Modals, AccessDenied
-        └── pages/            # Login, Register, Dashboard, Vendors, Profile
+        ├── services/         # Typed API clients (rfqApi, etc.)
+        ├── context/          # AuthContext with persistent sessions
+        ├── components/
+        │   ├── layout/       # AppLayout, Navbar, Sidebar
+        │   ├── rfq/          # CreateRfqModal (Screen 5 BOM)
+        │   └── quotations/   # SubmitQuotationModal (Screen 6 Bidding Grid)
+        └── pages/            # Dashboard, Vendors, Rfqs, RfqDetail, Quotations (Screen 7 Matrix)
 ```
 
 ---
@@ -105,25 +106,22 @@ d:\Kagnus/
 
 | Resource / Navigation Item | Route | Admin | Procurement Officer | Manager / Approver | Vendor |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Dashboard** | `/dashboard` | ✅ System Overview | ✅ Supplier Pipeline | ✅ Approvals & Spend | ✅ Scoped Company Profile & Orders |
-| **Vendors Directory** | `/vendors` | ✅ Full CRUD | ✅ Create, View, Edit | ✅ View Only | ❌ (Access Denied - 403) |
-| **RFQs (Week 2 Preview)** | `/rfqs` | ✅ | ✅ | ✅ | ❌ (Access Denied - 403) |
-| **Quotations (Week 2 Preview)** | `/quotations` | ✅ | ✅ | ✅ | ✅ (Supplier Bids) |
+| **Dashboard** | `/dashboard` | ✅ System Overview | ✅ Supplier Pipeline | ✅ Approvals & Spend | ✅ Isolated Profile & Orders |
+| **Vendors Directory** | `/vendors` | ✅ Full CRUD | ✅ Create, View, Edit | ✅ View Only | ❌ (Forbidden - 403) |
+| **RFQs Directory** | `/rfqs` | ✅ Full Access | ✅ Create, Edit, Publish | ✅ View Only | ✅ (Assigned RFQs Only) |
+| **RFQ Detail & Specs** | `/rfqs/:id` | ✅ Full Details | ✅ Full Details | ✅ Full Details | ✅ (Assigned Only) |
+| **Quotation Comparison**| `/quotations` | ✅ Matrix & Select | ✅ Matrix & Select | ✅ View Matrix | ❌ (Strict Exclusion - 403) |
+| **Submit / Edit Bid** | Modal / API | ❌ | ❌ | ❌ | ✅ (Invited Vendors Only) |
+| **Select for Approval** | `/api/rfqs/:id/select-quotation` | ✅ | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
 | **Approvals (Week 3 Preview)** | `/approvals` | ✅ | ❌ | ✅ | ❌ (Access Denied - 403) |
 | **Purchase Orders (Week 3 Preview)** | `/purchase-orders` | ✅ | ✅ | ✅ | ✅ (Own Awarded POs) |
-| **Invoices (Week 3 Preview)** | `/invoices` | ✅ | ✅ | ✅ | ✅ (Supplier Invoices) |
-| **Reports (Week 4 Preview)** | `/reports` | ✅ | ✅ | ✅ | ❌ (Access Denied - 403) |
-| **Audit Activity (Week 4 Preview)**| `/activity` | ✅ | ❌ | ❌ | ❌ (Access Denied - 403) |
-| **User Administration** | Backend | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
-| **Delete Vendor Records** | `/api/vendors/:id` | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
-| **Modify Vendor GSTIN / Status** | `/api/vendors/:id` | ✅ | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
 
 ---
 
 ## 5. Getting Started & Installation
 
 ### Prerequisites
-- Node.js (v18.0.0 or later, v24+ recommended)
+- Node.js (v18.0.0 or later)
 - npm (v9.0.0 or later)
 
 ### Installation
@@ -148,7 +146,7 @@ NODE_ENV=development
 CLIENT_ORIGIN=http://localhost:3000
 
 # Cloud PostgreSQL (Neon DB) Connection
-DATABASE_URL="postgresql://neondb_owner:password@ep-cool-sample.us-east-2.aws.neon.tech/neondb?sslmode=require"
+DATABASE_URL="postgresql://neondb_owner:password@ep-placeholder.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
 # JWT Secret
 JWT_SECRET=vendorbridge_super_secure_jwt_secret_key_at_least_32_chars_long
@@ -160,13 +158,13 @@ ADMIN_INVITE_CODE=ADMIN_SECURE_SETUP_2025
 ---
 
 ## 6. Accessing & Running the Application
- 
+
 ### 🌐 Live Production Deployment
 - **Live Frontend (Vercel):** [https://vendorbridge-gilt.vercel.app/](https://vendorbridge-gilt.vercel.app/)
 - **Live Backend API (Render):** [https://vendorbridge-s1qv.onrender.com](https://vendorbridge-s1qv.onrender.com)
 - **Live Health Endpoint:** [https://vendorbridge-s1qv.onrender.com/api/health](https://vendorbridge-s1qv.onrender.com/api/health)
 
-### Local Development Mode (Concurrent Server & Client)
+### Local Development Mode
 ```bash
 npm run dev
 ```
@@ -174,26 +172,26 @@ npm run dev
 - **Local Backend API**: [http://localhost:5000](http://localhost:5000)
 - **Local Health Check**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
 
-### Running Services Individually
-```bash
-# Start backend server only
-npm run dev:server
-
-# Start frontend client only
-npm run dev:client
-```
-
 ---
 
 ## 7. Testing & Verification
 
-Run the comprehensive integration test suite (28 tests covering authentication, password reset, GSTIN validation, vendor CRUD, role authorization, and vendor data isolation):
+Run the unified backend test suite covering Week 1 and Week 2 workflows:
 ```bash
+cd server
 npm test
 ```
-*Current test suite status: 28 / 28 tests passing.*
 
-### Production Build
+### Test Suite Execution Output
+```
+ ✓ src/tests/auth_vendor.test.ts (28 tests)
+ ✓ src/tests/rfq_quotation.test.ts (14 tests)
+
+ Test Files  2 passed (2)
+      Tests  42 passed (42)
+```
+
+### Production Build Verification
 Validate production bundles for both frontend and backend:
 ```bash
 # Build frontend
@@ -202,6 +200,7 @@ cd client && npm run build
 # Build backend
 cd ../server && npm run build
 ```
+Both builds compile with **exit code 0** and zero TypeScript errors.
 
 ---
 
@@ -209,41 +208,45 @@ cd ../server && npm run build
 
 All demo accounts share the password: `VendorBridge@2025`
 
-| Role | Email | Capabilities |
+| Role | Email | Capabilities in Week 2 |
 | :--- | :--- | :--- |
-| **System Admin** | `admin@vendorbridge.com` | Full system access, vendor deletion, user management |
-| **Procurement Officer** | `officer@vendorbridge.com` | Create vendors, edit profiles, view procurement metrics |
-| **Manager / Approver** | `manager@vendorbridge.com` | Review vendor compliance, oversee spending trends |
-| **Vendor Partner** | `vendor@infrasupplies.com` | View & update own supplier profile (Infra Supplies Pvt Ltd) |
+| **System Admin** | `admin@vendorbridge.com` | Full system access, vendor deletion, RFQ management, quotation selection |
+| **Procurement Officer** | `officer@vendorbridge.com` | Create RFQs, invite vendors, compare bids in matrix, "Select for Approval" |
+| **Manager / Approver** | `manager@vendorbridge.com` | View RFQ statuses and comparison matrices in read-only mode |
+| **Vendor Partner** | `vendor@infrasupplies.com` | View assigned RFQs, save drafts, submit itemized quotations (Infra Supplies) |
+| **Vendor Partner (Alt)** | `techcore@vendorbridge.com` | Competing vendor profile (TechCore Solutions) |
 
-*Tip: Use the convenient **Role Switcher** widget in the sidebar to effortlessly test any role with a single click during evaluation.*
+*Tip: Use the **Role Switcher** in the sidebar to switch between Procurement Officer and Vendor roles to experience the end-to-end RFQ dispatch $\rightarrow$ vendor bidding $\rightarrow$ comparison workflow.*
 
 ---
 
 ## 9. API Reference Summary
 
 ### Authentication (`/api/auth`)
-- `POST /api/auth/register` — Register user (with privilege escalation guard)
+- `POST /api/auth/register` — Register user (defaults to `VENDOR`)
 - `POST /api/auth/login` — Authenticate and receive HTTP-only cookie
 - `POST /api/auth/logout` — Clear session cookie
 - `GET  /api/auth/me` — Retrieve active user session
-- `POST /api/auth/forgot-password` — Generate expiring password-reset token
-- `POST /api/auth/reset-password` — Reset password using token
 
 ### Vendors (`/api/vendors`)
 - `GET    /api/vendors` — Query suppliers (`search`, `status`, `category`)
 - `POST   /api/vendors` — Create supplier (Admin/Officer only; validates GSTIN)
 - `GET    /api/vendors/:id` — View full vendor profile
 - `PATCH  /api/vendors/:id` — Update vendor details
-- `DELETE /api/vendors/:id` — Delete vendor (Admin only)
+- `DELETE /api/vendors/:id` — Delete vendor (Admin only, `onDelete: Restrict`)
 
-### Dashboard (`/api/dashboard`)
-- `GET /api/dashboard/summary` — Overview metrics, recent POs, and spending trend
+### RFQs (`/api/rfqs`)
+- `GET    /api/rfqs` — List RFQs (scoped by role: all for officers, invited-only for vendors)
+- `POST   /api/rfqs` — Create RFQ with BOM line items and vendor assignments
+- `GET    /api/rfqs/:id` — View RFQ details, line items, and attachments
+- `PATCH  /api/rfqs/:id` — Update RFQ details (Officer/Admin only)
+- `POST   /api/rfqs/:id/attachments` — Upload attachment (Multer memory, 5MB limit, stored in PostgreSQL bytes)
+- `GET    /api/rfqs/:id/attachments/:attachmentId` — Download attachment (authenticated & authorized)
+- `GET    /api/rfqs/:id/comparison` — Side-by-side comparison matrix with L1 calculation (strictly forbidden for vendors)
+- `POST   /api/rfqs/:id/select-quotation` — Select winning quotation for approval (atomic transaction)
 
----
-
-## 10. Roadmap (Upcoming Milestones)
-
-- **Week 2**: Request for Quotations (RFQs), Multi-Line Items & Automated L1 Quotation Comparison Matrix.
-- **Week 3**: Multi-Tier Approvals Workflow (L1, L2, Finance), Purchase Order Generation & 3-Way Invoice Matching.
-- **Week 4**: Executive Analytics, OTIF Supplier Scorecards, Department Spend Breakdown & Immutable Audit Logs.
+### Quotations (`/api/quotations`)
+- `GET    /api/quotations` — List quotations (filtered by `rfqId` or current vendor)
+- `POST   /api/quotations` — Submit quotation or save draft (verifies deadline, status, and line items)
+- `GET    /api/quotations/:id` — Get quotation details by ID
+- `PATCH  /api/quotations/:id` — Edit quotation before submission deadline

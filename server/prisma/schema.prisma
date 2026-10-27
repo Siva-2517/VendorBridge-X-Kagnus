@@ -7,6 +7,8 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// --- Week 1 Enums ---
+
 enum Role {
   ADMIN
   PROCUREMENT_OFFICER
@@ -27,25 +29,59 @@ enum POStatus {
   REJECTED
 }
 
+// --- Week 2 Enums ---
+
+enum RfqStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  AWARDED
+  CANCELLED
+}
+
+enum InvitationStatus {
+  INVITED
+  VIEWED
+  QUOTED
+  DECLINED
+}
+
+enum QuotationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  SELECTED
+  REJECTED
+}
+
+// --- Models ---
+
+model SystemSequence {
+  name         String   @id // e.g. "RFQ_2026", "QT_2026"
+  currentValue Int      @default(0)
+  updatedAt    DateTime @updatedAt
+}
+
 model User {
-  id               String            @id @default(uuid())
-  firstName        String
-  lastName         String
-  email            String            @unique
-  passwordHash     String
-  phoneNumber      String?
-  role             Role              @default(VENDOR)
-  country          String?           @default("India")
-  additionalInfo   String?
-  avatarUrl        String?
-  isActive         Boolean           @default(true)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  
-  passwordResets   PasswordResetToken[]
-  vendorProfile    Vendor?           @relation("VendorUser")
-  createdVendors   Vendor[]          @relation("VendorCreator")
-  auditLogs        AuditLog[]
+  id             String               @id @default(uuid())
+  firstName      String
+  lastName       String
+  email          String               @unique
+  passwordHash   String
+  phoneNumber    String?
+  role           Role                 @default(VENDOR)
+  country        String?              @default("India")
+  additionalInfo String?
+  avatarUrl      String?
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  passwordResets PasswordResetToken[]
+  vendorProfile  Vendor?              @relation("VendorUser")
+  createdVendors Vendor[]             @relation("VendorCreator")
+  rfqsCreated    Rfq[]                @relation("RfqCreator")
+  auditLogs      AuditLog[]
 }
 
 model PasswordResetToken {
@@ -59,10 +95,10 @@ model PasswordResetToken {
 }
 
 model Vendor {
-  id             String       @id @default(uuid())
+  id             String                @id @default(uuid())
   name           String
-  category       String       // Constructions, IT, Logistics, Manufacturing, Services
-  gstin          String       @unique // 15-char Indian GSTIN
+  category       String                // Constructions, IT, Logistics, Manufacturing, Services, Furniture
+  gstin          String                @unique // 15-char Indian GSTIN
   contactPerson  String
   email          String
   phone          String
@@ -70,18 +106,20 @@ model Vendor {
   city           String?
   state          String?
   pincode        String?
-  country        String       @default("India")
-  status         VendorStatus @default(PENDING)
+  country        String                @default("India")
+  status         VendorStatus          @default(PENDING)
   notes          String?
 
   createdById    String?
-  createdBy      User?        @relation("VendorCreator", fields: [createdById], references: [id])
-  userId         String?      @unique
-  user           User?        @relation("VendorUser", fields: [userId], references: [id])
-  
+  createdBy      User?                 @relation("VendorCreator", fields: [createdById], references: [id])
+  userId         String?               @unique
+  user           User?                 @relation("VendorUser", fields: [userId], references: [id])
+
   purchaseOrders PurchaseOrder[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  rfqInvitations RfqVendorInvitation[]
+  quotations     Quotation[]
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   @@index([name])
   @@index([gstin])
@@ -90,21 +128,140 @@ model Vendor {
 }
 
 model PurchaseOrder {
-  id          String    @id @default(uuid())
-  poNumber    String    @unique
+  id        String   @id @default(uuid())
+  poNumber  String   @unique
+  vendorId  String
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  amount    Float
+  status    POStatus @default(PENDING)
+  orderDate DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Rfq {
+  id                  String                @id @default(uuid())
+  rfqNumber           String                @unique // Formatted: RFQ-YYYY-XXXX
+  title               String
+  description         String
+  category            String                // Furniture, IT Hardware, Logistics, Constructions, Services
+  deliveryLocation    String                @default("Central Warehouse, Mumbai")
+  deadline            DateTime
+  status              RfqStatus             @default(OPEN)
+
+  createdById         String
+  createdBy           User                  @relation("RfqCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // Single Selected Quotation Guarantee: exactly one quotation can be selected for an RFQ
+  selectedQuotationId String?               @unique
+  selectedQuotation   Quotation?            @relation("SelectedQuotation", fields: [selectedQuotationId], references: [id], onDelete: SetNull)
+
+  items               RfqItem[]
+  invitations         RfqVendorInvitation[]
+  quotations          Quotation[]           @relation("RfqQuotations")
+  attachments         RfqAttachment[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@index([deadline])
+}
+
+model RfqItem {
+  id              String          @id @default(uuid())
+  rfqId           String
+  rfq             Rfq             @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  itemDescription String
+  quantity        Decimal         @db.Decimal(10, 2)
+  uom             String          // NOS, Units, KG, Meters, Licenses
+  targetPrice     Decimal?        @db.Decimal(12, 2)
+  createdAt       DateTime        @default(now())
+
+  quotationItems  QuotationItem[]
+
+  @@index([rfqId])
+}
+
+model RfqVendorInvitation {
+  id          String           @id @default(uuid())
+  rfqId       String
+  rfq         Rfq              @relation(fields: [rfqId], references: [id], onDelete: Cascade)
   vendorId    String
-  vendor      Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  amount      Float
-  status      POStatus  @default(PENDING)
-  orderDate   DateTime  @default(now())
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  vendor      Vendor           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  status      InvitationStatus @default(INVITED)
+  invitedAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  @@unique([rfqId, vendorId])
+  @@index([vendorId])
+}
+
+model Quotation {
+  id              String          @id @default(uuid())
+  quotationNumber String          @unique // Formatted: QT-YYYY-XXXX
+  rfqId           String
+  rfq             Rfq             @relation("RfqQuotations", fields: [rfqId], references: [id], onDelete: Restrict)
+  vendorId        String
+  vendor          Vendor          @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  // High-precision financial totals (calculated authoritatively on backend)
+  subtotalAmount  Decimal         @db.Decimal(12, 2)
+  taxRate         Decimal         @default(18.00) @db.Decimal(5, 2) // Standard GST %
+  taxAmount       Decimal         @db.Decimal(12, 2)
+  grandTotal      Decimal         @db.Decimal(12, 2)
+
+  deliveryDays    Int             // Delivery turnaround in calendar days
+  paymentTerms    String          // e.g. "30 days net", "15 days net"
+  validityDate    DateTime
+  notes           String?
+  status          QuotationStatus @default(SUBMITTED)
+
+  selectedForRfq  Rfq?            @relation("SelectedQuotation")
+
+  items           QuotationItem[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([rfqId, vendorId]) // Strictly one active quotation per vendor per RFQ
+  @@index([rfqId])
+  @@index([vendorId])
+  @@index([grandTotal])
+}
+
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  rfqItemId   String
+  rfqItem     RfqItem   @relation(fields: [rfqItemId], references: [id], onDelete: Restrict)
+
+  unitPrice   Decimal   @db.Decimal(12, 2)
+  lineTotal   Decimal   @db.Decimal(12, 2) // quantity * unitPrice
+  remarks     String?
+
+  @@unique([quotationId, rfqItemId]) // Exactly one quote line per RFQ item
+  @@index([quotationId])
+  @@index([rfqItemId])
+}
+
+model RfqAttachment {
+  id        String   @id @default(uuid())
+  rfqId     String
+  rfq       Rfq      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  fileName  String   // Original filename
+  fileSize  Int      // In bytes (max 5MB enforced)
+  mimeType  String   // e.g. application/pdf, image/png
+  fileData  Bytes    // Binary content stored securely in Neon PostgreSQL
+  createdAt DateTime @default(now())
+
+  @@index([rfqId])
 }
 
 model AuditLog {
   id        String   @id @default(uuid())
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   action    String
   details   String?
   createdAt DateTime @default(now())

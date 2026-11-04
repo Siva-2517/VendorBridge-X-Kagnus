@@ -8,6 +8,9 @@ import vendorRoutes from './routes/vendorRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import rfqRoutes from './routes/rfqRoutes';
 import quotationRoutes from './routes/quotationRoutes';
+import approvalRoutes from './routes/approvalRoutes';
+import poRoutes from './routes/poRoutes';
+import invoiceRoutes from './routes/invoiceRoutes';
 
 dotenv.config();
 
@@ -63,6 +66,9 @@ app.use('/api/vendors', vendorRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/rfqs', rfqRoutes);
 app.use('/api/quotations', quotationRoutes);
+app.use('/api/approvals', approvalRoutes);
+app.use('/api/purchase-orders', poRoutes);
+app.use('/api/invoices', invoiceRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

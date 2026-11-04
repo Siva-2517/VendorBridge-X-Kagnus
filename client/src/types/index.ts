@@ -1,9 +1,10 @@
 export type Role = 'ADMIN' | 'PROCUREMENT_OFFICER' | 'MANAGER_APPROVER' | 'VENDOR';
 export type VendorStatus = 'ACTIVE' | 'PENDING' | 'BLOCKED';
-export type POStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+export type POStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'ISSUED' | 'CANCELLED';
 export type RfqStatus = 'DRAFT' | 'OPEN' | 'CLOSED' | 'AWARDED' | 'CANCELLED';
-export type InvitationStatus = 'INVITED' | 'SUBMITTED' | 'DECLINED';
-export type QuotationStatus = 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED';
+export type InvitationStatus = 'INVITED' | 'VIEWED' | 'QUOTED' | 'SUBMITTED' | 'DECLINED';
+export type QuotationStatus = 'DRAFT' | 'SUBMITTED' | 'UNDER_REVIEW' | 'SELECTED' | 'APPROVED' | 'ACCEPTED' | 'REJECTED';
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface User {
   id: string;
@@ -219,4 +220,268 @@ export interface RfqComparisonMatrix {
   lowestQuotationId: string | null;
   lowestTotalAmount: number | null;
   totalQuotations: number;
+}
+
+export interface ApprovalHistoryItem {
+  id: string;
+  approvalRequestId: string;
+  action: string;
+  actorId: string;
+  actor?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: Role;
+  };
+  remarks?: string | null;
+  createdAt: string;
+}
+
+export interface ApprovalRequestItem {
+  id: string;
+  rfqId: string;
+  quotationId: string;
+  status: ApprovalStatus;
+  submittedById: string;
+  submittedBy?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: Role;
+  };
+  decidedById?: string | null;
+  decidedBy?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: Role;
+  } | null;
+  decidedAt?: string | null;
+  remarks?: string | null;
+  rfq?: {
+    id: string;
+    rfqNumber: string;
+    title: string;
+    description: string;
+    category: string;
+    deliveryLocation: string;
+    deadline: string;
+    status: RfqStatus;
+    items?: Array<{
+      id: string;
+      rfqId: string;
+      itemDescription: string;
+      quantity: number;
+      uom: string;
+      targetPrice?: number | null;
+      createdAt: string;
+    }>;
+  };
+  quotation?: {
+    id: string;
+    quotationNumber: string;
+    vendorId: string;
+    vendor?: {
+      id: string;
+      name: string;
+      gstin: string;
+      category: string;
+      email: string;
+      phone: string;
+    };
+    subtotalAmount: number;
+    taxRate: number;
+    taxAmount: number;
+    grandTotal: number;
+    deliveryDays: number;
+    paymentTerms: string;
+    validityDate: string;
+    notes?: string | null;
+    status: QuotationStatus;
+    items?: Array<{
+      id: string;
+      quotationId: string;
+      rfqItemId: string;
+      itemDescription?: string;
+      quantity?: number;
+      uom?: string;
+      unitPrice: number;
+      lineTotal: number;
+      remarks?: string | null;
+    }>;
+  };
+  history?: ApprovalHistoryItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  purchaseOrderId: string;
+  itemDescription: string;
+  quantity: number;
+  uom: string;
+  unitPrice: number;
+  lineTotal: number;
+  createdAt: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  vendorId: string;
+  vendorName?: string;
+  vendor?: {
+    id: string;
+    name: string;
+    gstin: string;
+    category: string;
+    email: string;
+    phone: string;
+    address?: string;
+    city?: string | null;
+    state?: string | null;
+    pincode?: string | null;
+  };
+  amount: number; // legacy Week 1 compatibility
+  subtotalAmount?: number | null;
+  taxAmount?: number | null;
+  grandTotal?: number | null;
+  status: POStatus;
+  orderDate: string;
+  rfqId?: string | null;
+  rfq?: {
+    id: string;
+    rfqNumber: string;
+    title: string;
+    category: string;
+    deliveryLocation: string;
+  } | null;
+  quotationId?: string | null;
+  quotation?: {
+    id: string;
+    quotationNumber: string;
+    taxRate: number;
+    subtotalAmount: number;
+    taxAmount: number;
+    grandTotal: number;
+    deliveryDays: number;
+    paymentTerms: string;
+    approvalRequest?: {
+      id: string;
+      status: string;
+      decidedAt?: string | null;
+      decidedBy?: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        role: Role;
+      } | null;
+    } | null;
+  } | null;
+  paymentTerms?: string | null;
+  deliveryDays?: number | null;
+  notes?: string | null;
+  createdById?: string | null;
+  createdBy?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: Role;
+  } | null;
+  items?: PurchaseOrderItem[];
+  isLegacy?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InvoiceStatus = 'PENDING_PAYMENT' | 'PAID' | 'CANCELLED';
+
+export type TaxBreakdownType = 'CGST_SGST' | 'IGST' | 'STANDARD';
+
+export interface TaxBreakdown {
+  type: TaxBreakdownType;
+  taxRate: number;
+  totalTaxAmount: number;
+  cgstRate?: number;
+  cgstAmount?: number;
+  sgstRate?: number;
+  sgstAmount?: number;
+  igstRate?: number;
+  igstAmount?: number;
+  isInterState?: boolean;
+}
+
+export interface ThreeWayMatchResult {
+  isMatched: boolean;
+  status: 'MATCHED' | 'DISCREPANCY';
+  details: {
+    poNumber: string;
+    quotationNumber: string;
+    itemCountMatch: boolean;
+    quantityMatch: boolean;
+    unitPriceMatch: boolean;
+    subtotalMatch: boolean;
+    taxMatch: boolean;
+    grandTotalMatch: boolean;
+  };
+  discrepancies: string[];
+}
+
+export interface InvoiceItem {
+  id: string;
+  invoiceId: string;
+  itemDescription: string;
+  quantity: number;
+  uom: string;
+  unitPrice: number;
+  lineTotal: number;
+  createdAt: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  purchaseOrderId: string;
+  purchaseOrder?: PurchaseOrder;
+  vendorId: string;
+  vendorName?: string;
+  vendor?: {
+    id: string;
+    name: string;
+    gstin: string;
+    category: string;
+    email: string;
+    phone: string;
+    address?: string;
+    city?: string | null;
+    state?: string | null;
+    pincode?: string | null;
+  };
+  subtotalAmount: number;
+  taxRate: number;
+  taxAmount: number;
+  taxBreakdown?: TaxBreakdown | null;
+  grandTotal: number;
+  status: InvoiceStatus;
+  dueDate?: string | null;
+  paidAt?: string | null;
+  notes?: string | null;
+  createdById?: string | null;
+  createdBy?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: Role;
+  } | null;
+  items?: InvoiceItem[];
+  matchingResult?: ThreeWayMatchResult;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -10,6 +10,9 @@ import { Vendors } from './pages/Vendors';
 import { Rfqs } from './pages/Rfqs';
 import { RfqDetail } from './pages/RfqDetail';
 import { Quotations } from './pages/Quotations';
+import { Approvals } from './pages/Approvals';
+import { PurchaseOrders } from './pages/PurchaseOrders';
+import { Invoices } from './pages/Invoices';
 import { Profile } from './pages/Profile';
 import { FutureModulePlaceholder } from './components/common/FutureModulePlaceholder';
 import { AccessDenied } from './components/common/AccessDenied';
@@ -85,63 +88,24 @@ export const App: React.FC = () => {
             <Route path="rfqs/:id" element={<RfqDetail />} />
             <Route path="quotations" element={<Quotations />} />
 
-            {/* Honest Empty States for Scheduled Future Modules */}
-
+            {/* Week 3 Live Production Modules */}
             <Route
               path="approvals"
               element={
                 <RoleRouteGuard
-                  allowedRoles={['ADMIN', 'MANAGER_APPROVER']}
+                  allowedRoles={['ADMIN', 'MANAGER_APPROVER', 'PROCUREMENT_OFFICER']}
                   resourceName="Approvals Workflow"
                 >
-                  <FutureModulePlaceholder
-                    moduleName="Multi-Level Approvals Workflow"
-                    scheduledWeek="Week 3"
-                    description="Hierarchical procurement approval chains (L1, L2, Finance) with remarks, approval status, and audit trail."
-                    features={[
-                      'Multi-tier managerial approval stages',
-                      'Role-based delegation and remarks',
-                      'Single-click approve / reject decisions',
-                      'Instant PO conversion triggers',
-                    ]}
-                  />
+                  <Approvals />
                 </RoleRouteGuard>
               }
             />
 
-            <Route
-              path="purchase-orders"
-              element={
-                <FutureModulePlaceholder
-                  moduleName="Purchase Orders"
-                  scheduledWeek="Week 3"
-                  description="Official purchase order generation, digital sign-off, supplier PDF transmission, and fulfillment status."
-                  features={[
-                    'Automated PO number sequencing',
-                    'Delivery and milestone tracking',
-                    'PDF export and supplier email dispatch',
-                    'GRN / fulfillment reconciliation',
-                  ]}
-                />
-              }
-            />
+            {/* Honest Empty States for Scheduled Future Modules */}
 
-            <Route
-              path="invoices"
-              element={
-                <FutureModulePlaceholder
-                  moduleName="Invoices & 3-Way Matching"
-                  scheduledWeek="Week 3"
-                  description="Vendor invoice submission, 3-way matching against PO and delivery receipt, payment status tracking."
-                  features={[
-                    'Vendor tax invoice upload',
-                    'Automated 3-way matching (PO-GRN-Invoice)',
-                    'Tax liability and TDS breakdown',
-                    'Payment authorization pipeline',
-                  ]}
-                />
-              }
-            />
+            <Route path="purchase-orders" element={<PurchaseOrders />} />
+
+            <Route path="invoices" element={<Invoices />} />
 
             <Route
               path="reports"

@@ -12,13 +12,18 @@ export const Badge: React.FC<BadgeProps> = ({ status, className = '' }) => {
   let styles = 'bg-slate-800/80 text-slate-300 border-slate-700/80';
   let dotColor = 'bg-slate-400';
 
-  if (normalized === 'ACTIVE' || normalized === 'APPROVED') {
+  if (
+    normalized === 'ACTIVE' ||
+    normalized === 'APPROVED' ||
+    normalized === 'ISSUED' ||
+    normalized === 'PAID'
+  ) {
     styles = 'bg-emerald-950/40 text-emerald-300 border-emerald-700/40';
     dotColor = 'bg-emerald-400';
-  } else if (normalized === 'PENDING') {
+  } else if (normalized === 'PENDING' || normalized === 'PENDING_PAYMENT') {
     styles = 'bg-amber-950/40 text-amber-300 border-amber-700/40';
     dotColor = 'bg-amber-400';
-  } else if (normalized === 'BLOCKED' || normalized === 'REJECTED') {
+  } else if (normalized === 'BLOCKED' || normalized === 'REJECTED' || normalized === 'CANCELLED') {
     styles = 'bg-rose-950/40 text-rose-300 border-rose-700/40';
     dotColor = 'bg-rose-400';
   } else if (normalized === 'DRAFT') {

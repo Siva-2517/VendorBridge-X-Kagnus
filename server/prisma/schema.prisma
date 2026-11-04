@@ -27,6 +27,8 @@ enum POStatus {
   PENDING
   APPROVED
   REJECTED
+  ISSUED
+  CANCELLED
 }
 
 // --- Week 2 Enums ---
@@ -51,13 +53,28 @@ enum QuotationStatus {
   SUBMITTED
   UNDER_REVIEW
   SELECTED
+  APPROVED
   REJECTED
+}
+
+// --- Week 3 Enums ---
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
 }
 
 // --- Models ---
 
 model SystemSequence {
-  name         String   @id // e.g. "RFQ_2026", "QT_2026"
+  name         String   @id // e.g. "RFQ_2026", "QT_2026", "PO_2026", "INV_2026"
   currentValue Int      @default(0)
   updatedAt    DateTime @updatedAt
 }
@@ -77,11 +94,16 @@ model User {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
-  passwordResets PasswordResetToken[]
-  vendorProfile  Vendor?              @relation("VendorUser")
-  createdVendors Vendor[]             @relation("VendorCreator")
-  rfqsCreated    Rfq[]                @relation("RfqCreator")
-  auditLogs      AuditLog[]
+  passwordResets     PasswordResetToken[]
+  vendorProfile      Vendor?              @relation("VendorUser")
+  createdVendors     Vendor[]             @relation("VendorCreator")
+  rfqsCreated        Rfq[]                @relation("RfqCreator")
+  approvalsSubmitted ApprovalRequest[]    @relation("ApprovalSubmitter")
+  approvalsDecided   ApprovalRequest[]    @relation("ApprovalDecider")
+  approvalActions    ApprovalHistory[]    @relation("ApprovalActionUser")
+  purchaseOrdersAuth PurchaseOrder[]      @relation("POCreator")
+  invoicesCreated    Invoice[]            @relation("InvoiceCreator")
+  auditLogs          AuditLog[]
 }
 
 model PasswordResetToken {
@@ -116,6 +138,7 @@ model Vendor {
   user           User?                 @relation("VendorUser", fields: [userId], references: [id])
 
   purchaseOrders PurchaseOrder[]
+  invoices       Invoice[]
   rfqInvitations RfqVendorInvitation[]
   quotations     Quotation[]
   createdAt      DateTime              @default(now())
@@ -128,15 +151,136 @@ model Vendor {
 }
 
 model PurchaseOrder {
-  id        String   @id @default(uuid())
-  poNumber  String   @unique
-  vendorId  String
-  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  amount    Float
-  status    POStatus @default(PENDING)
-  orderDate DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String              @id @default(uuid())
+  poNumber       String              @unique // Formatted: PO-YYYY-XXXX
+  vendorId       String
+  vendor         Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  amount         Float               // Week 1 legacy compatibility
+  subtotalAmount Decimal?            @db.Decimal(12, 2)
+  taxAmount      Decimal?            @db.Decimal(12, 2)
+  grandTotal     Decimal?            @db.Decimal(12, 2)
+  status         POStatus            @default(PENDING)
+  orderDate      DateTime            @default(now())
+
+  rfqId          String?
+  rfq            Rfq?                @relation(fields: [rfqId], references: [id], onDelete: SetNull)
+  quotationId    String?             @unique
+  quotation      Quotation?          @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+
+  paymentTerms   String?
+  deliveryDays   Int?
+  notes          String?
+
+  createdById    String?
+  createdBy      User?               @relation("POCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  items          PurchaseOrderItem[]
+  invoice        Invoice?
+
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([vendorId])
+  @@index([status])
+  @@index([rfqId])
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemDescription String
+  quantity        Decimal       @db.Decimal(10, 2)
+  uom             String        // NOS, Units, KG, Meters, Licenses
+  unitPrice       Decimal       @db.Decimal(12, 2)
+  lineTotal       Decimal       @db.Decimal(12, 2)
+  createdAt       DateTime      @default(now())
+
+  @@index([purchaseOrderId])
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  invoiceNumber   String        @unique // Formatted: INV-YYYY-XXXX
+  purchaseOrderId String        @unique
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  vendorId        String
+  vendor          Vendor        @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  subtotalAmount  Decimal       @db.Decimal(12, 2)
+  taxRate         Decimal       @default(18.00) @db.Decimal(5, 2)
+  taxAmount       Decimal       @db.Decimal(12, 2)
+  taxBreakdown    Json?         // e.g. {"type": "CGST_SGST", "cgstRate": 9, "cgstAmount": 19800, "sgstRate": 9, "sgstAmount": 19800}
+  grandTotal      Decimal       @db.Decimal(12, 2)
+
+  status          InvoiceStatus @default(PENDING_PAYMENT)
+  dueDate         DateTime?
+  paidAt          DateTime?
+  notes           String?
+
+  createdById     String?
+  createdBy       User?         @relation("InvoiceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  items           InvoiceItem[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([vendorId])
+  @@index([status])
+  @@index([purchaseOrderId])
+}
+
+model InvoiceItem {
+  id              String   @id @default(uuid())
+  invoiceId       String
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  itemDescription String
+  quantity        Decimal  @db.Decimal(10, 2)
+  uom             String
+  unitPrice       Decimal  @db.Decimal(12, 2)
+  lineTotal       Decimal  @db.Decimal(12, 2)
+  createdAt       DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+model ApprovalRequest {
+  id            String            @id @default(uuid())
+  rfqId         String
+  rfq           Rfq               @relation(fields: [rfqId], references: [id], onDelete: Restrict)
+  quotationId   String            @unique
+  quotation     Quotation         @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  status        ApprovalStatus    @default(PENDING)
+
+  submittedById String
+  submittedBy   User              @relation("ApprovalSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  decidedById   String?
+  decidedBy     User?             @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: Restrict)
+  decidedAt     DateTime?
+  remarks       String?
+
+  history       ApprovalHistory[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([rfqId])
+  @@index([status])
+  @@index([submittedById])
+  @@index([decidedById])
+}
+
+model ApprovalHistory {
+  id                String          @id @default(uuid())
+  approvalRequestId String
+  approvalRequest   ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+  action            String          // SUBMITTED, APPROVED, REJECTED
+  actorId           String
+  actor             User            @relation("ApprovalActionUser", fields: [actorId], references: [id], onDelete: Restrict)
+  remarks           String?
+  createdAt         DateTime        @default(now())
+
+  @@index([approvalRequestId])
+  @@index([actorId])
 }
 
 model Rfq {
@@ -160,6 +304,8 @@ model Rfq {
   invitations         RfqVendorInvitation[]
   quotations          Quotation[]           @relation("RfqQuotations")
   attachments         RfqAttachment[]
+  approvalRequests    ApprovalRequest[]
+  purchaseOrders      PurchaseOrder[]
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
 
@@ -218,6 +364,8 @@ model Quotation {
   status          QuotationStatus @default(SUBMITTED)
 
   selectedForRfq  Rfq?            @relation("SelectedQuotation")
+  approvalRequest ApprovalRequest?
+  purchaseOrder   PurchaseOrder?
 
   items           QuotationItem[]
   createdAt       DateTime        @default(now())

@@ -1,7 +1,7 @@
 # VendorBridge — Procurement & Vendor Management ERP
-### Week 1 & Week 2: Foundation, Vendor Management, RFQ & Quotation Management
+### Complete Platform: Week 1, Week 2 & Week 3 (Approvals, POs, Invoices & 3-Way Matching)
 
-VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise Resource Planning (ERP) platform designed to streamline supplier onboarding, verification, request for quotations (RFQs), quotation comparison, multi-tier approvals, purchase orders, and 3-way matching.
+VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise Resource Planning (ERP) platform designed to streamline supplier onboarding, verification, request for quotations (RFQs), quotation comparison, managerial approvals, purchase orders, 3-way matching, PDF generation, and invoice lifecycle management.
 
 > [!NOTE]
 > ### 🌐 Live Production Deployment
@@ -50,14 +50,55 @@ VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise R
   - PostgreSQL byte storage (`Bytes` data type) ensures technical specifications and BOM sheets persist reliably across serverless/ephemeral deployments.
   - Validates MIME whitelist (`application/pdf`, images, text/plain) and 5MB payload limits with role-scoped download authorization.
 
+### Week 3: Approvals, PO Generation, Invoicing & 3-Way Matching
+- **Managerial Approval Workflow**:
+  - Automatically generates an `ApprovalRequest` record (`PENDING` status) upon quotation selection.
+  - Dedicated approval queue (`/approvals`) for `ADMIN` and `MANAGER_APPROVER` roles.
+  - Explicit decision actions: `APPROVE` or `REJECT` with mandatory remarks.
+  - Immutable audit history persisted via `ApprovalHistory` tracking actor, timestamp, action, and remarks.
+  - Quotation status transitions from `SELECTED` $\rightarrow$ `APPROVED` (or returns to eligible state upon rejection).
+- **Purchase Order Generation & Management**:
+  - Atomic sequence generation: `PO-YYYY-XXXX` using row-level locking (`SELECT ... FOR UPDATE`) in PostgreSQL.
+  - Authorized generation: Only approved quotations can generate purchase orders.
+  - Strict 1:1 constraint: Database unique constraint (`quotationId`) prevents duplicate PO generation.
+  - Complete line item copying from approved quotation with unit prices, UOM, and commercial terms.
+  - Server-side Decimal calculations for subtotal, GST tax, and grand totals.
+- **Invoice Management & Authoritative 3-Way Matching**:
+  - Invoices generated against eligible purchase orders (`APPROVED` or `ISSUED`).
+  - Sequence generation: `INV-YYYY-XXXX` atomic sequence numbering.
+  - 1:1 PO-to-Invoice enforcement with concurrent request serialization (returns `409 Conflict` safely).
+  - **3-Way Matching Engine**: Reconciles Quotation $\leftrightarrow$ Purchase Order $\leftrightarrow$ Invoice across:
+    1. Line items, descriptions, quantities, UOM, and unit prices.
+    2. Subtotals, tax rates, intra-state/inter-state tax breakdown, and grand totals.
+    3. Persists reconciliation outcome (`MATCHED` vs `DISCREPANCY`) with detailed discrepancy reasons.
+- **Indian GST Tax Calculation Service**:
+  - Authoritative calculation using `Prisma.Decimal` (zero IEEE 754 floating-point drift).
+  - Resolves vendor state from validated 15-character GSTIN (`^[0-9]{2}[A-Z0-9]{13}$`) and buyer state from delivery location.
+  - Intra-state transactions: Splits tax equally into CGST + SGST with exact 0-drift rounding.
+  - Inter-state transactions: Assigns full tax to IGST.
+  - Zero hardcoded defaults: Fails closed with descriptive errors if source tax rate, vendor state, or delivery location state cannot be resolved.
+- **PDF Invoice Generation & Streaming**:
+  - Server-side streaming binary PDF generation using PDFKit.
+  - Professional tabular layout: Buyer & Seller GSTIN details, line item table, CGST/SGST/IGST breakdown, and payment status badge.
+  - Streamed directly with `Content-Type: application/pdf` and `Content-Disposition: inline/attachment`.
+- **SMTP Email Transmission & Anti-Exfiltration Security**:
+  - Transmits invoice PDFs via standard SMTP (using Nodemailer).
+  - Strict recipient whitelist: Vendors may only dispatch invoices to their verified company email, their logged-in user email, or the authorized procurement officer. Arbitrary recipients return `403 Forbidden`.
+  - Truthful reporting: Returns `code: "EMAIL_NOT_CONFIGURED"` when SMTP credentials are not present in server environment; no fake success indicators.
+  - Sanitized responses: Server hostnames, authentication credentials, and internal error stacks are never leaked.
+- **Invoice Payment Authorization**:
+  - Only `ADMIN` role is authorized to mark invoices as `PAID`.
+  - Enforces `403 Forbidden` for Procurement Officers, Managers, and Vendors.
+  - Records timestamp (`paidAt`), custom payment notes (e.g., bank UTR number), and audit trail entry.
+
 ---
 
 ## 2. Technology Stack
 
 - **Frontend**: React 18, TypeScript, Tailwind CSS (Slate-Navy `#111827`/`#0B1220` & Muted-Teal `#36C9A5`), Lucide React, React Router v6, Vite.
-- **Backend**: Node.js, Express, TypeScript, Zod, Multer, bcryptjs, jsonwebtoken, cookie-parser, cors, helmet, express-rate-limit.
+- **Backend**: Node.js, Express, TypeScript, Prisma ORM, Zod, PDFKit, Nodemailer, bcryptjs, jsonwebtoken, cookie-parser, cors, helmet, express-rate-limit.
 - **Database & ORM**: Cloud PostgreSQL (Neon Serverless) via Prisma ORM (`Decimal(12, 2)` financial precision, `Bytes` file storage, `SystemSequence` atomic counters).
-- **Testing**: Vitest & Supertest with 42 automated integration tests across Week 1 and Week 2 suites.
+- **Testing**: Vitest & Supertest with 138 automated integration tests across all modules.
 
 ---
 
@@ -72,17 +113,25 @@ d:\Kagnus/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── prisma/
-│   │   ├── schema.prisma     # PostgreSQL Prisma models (Decimal, Restrictive FKs, Bytes)
+│   │   ├── schema.prisma     # PostgreSQL Prisma models (Decimal, Restrictive FKs, Sequences)
+│   │   ├── migrations/       # Version-controlled migration history
+│   │   │   ├── 0_init/
+│   │   │   ├── 20261027120000_week2_rfq_quotations/
+│   │   │   └── 20261028120000_week3_approvals_po_invoices/
 │   │   └── seed.ts           # Migration and Excalidraw baseline seed data
 │   └── src/
 │       ├── types/            # TypeScript domain interfaces & enums
-│       ├── utils/            # Zod validation & GSTIN schemas
+│       ├── utils/            # Tax calculation, 3-way matching, PDF generator, email service
 │       ├── middleware/       # JWT auth, upload (Multer 5MB), RBAC guards
-│       ├── controllers/      # Auth, Vendor, RFQ, Quotation, and Dashboard controllers
-│       ├── routes/           # REST routers (/api/auth, /api/vendors, /api/rfqs, /api/quotations)
-│       ├── tests/            # Vitest integration test suites (42 tests)
-│       │   ├── auth_vendor.test.ts      # Week 1 tests (28 passed)
-│       │   └── rfq_quotation.test.ts    # Week 2 tests (14 passed)
+│       ├── controllers/      # Auth, Vendor, RFQ, Quotation, Approval, PO, and Invoice controllers
+│       ├── routes/           # REST routers (/api/auth, /api/vendors, /api/rfqs, /api/approvals, /api/purchase-orders, /api/invoices)
+│       ├── tests/            # Vitest integration test suites (138 tests)
+│       │   ├── auth_vendor.test.ts          # Week 1 tests (28 passed)
+│       │   ├── rfq_quotation.test.ts        # Week 2 tests (14 passed)
+│       │   ├── approval_workflow.test.ts    # Week 3 Approval tests (15 passed)
+│       │   ├── po_generation.test.ts        # Week 3 PO tests (11 passed)
+│       │   ├── invoice_matching.test.ts     # Week 3 Invoice & Matching tests (30 passed)
+│       │   └── e2e_audit_workflow.test.ts   # Week 3 12-Step E2E Suite (12 passed)
 │       ├── app.ts            # Express application setup
 │       └── index.ts          # Server entry point
 └── client/                   # Frontend React & Tailwind application
@@ -91,13 +140,14 @@ d:\Kagnus/
     ├── tailwind.config.js    # Custom ERP dark palette
     └── src/
         ├── types/            # Frontend interfaces
-        ├── services/         # Typed API clients (rfqApi, etc.)
+        ├── services/         # Typed API clients (rfqApi, approvalApi, poApi, invoiceApi)
         ├── context/          # AuthContext with persistent sessions
         ├── components/
         │   ├── layout/       # AppLayout, Navbar, Sidebar
+        │   ├── common/       # Badge, Status indicators
         │   ├── rfq/          # CreateRfqModal (Screen 5 BOM)
         │   └── quotations/   # SubmitQuotationModal (Screen 6 Bidding Grid)
-        └── pages/            # Dashboard, Vendors, Rfqs, RfqDetail, Quotations (Screen 7 Matrix)
+        └── pages/            # Dashboard, Vendors, Rfqs, Approvals, PurchaseOrders, Invoices
 ```
 
 ---
@@ -113,8 +163,12 @@ d:\Kagnus/
 | **Quotation Comparison**| `/quotations` | ✅ Matrix & Select | ✅ Matrix & Select | ✅ View Matrix | ❌ (Strict Exclusion - 403) |
 | **Submit / Edit Bid** | Modal / API | ❌ | ❌ | ❌ | ✅ (Invited Vendors Only) |
 | **Select for Approval** | `/api/rfqs/:id/select-quotation` | ✅ | ✅ | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
-| **Approvals (Week 3 Preview)** | `/approvals` | ✅ | ❌ | ✅ | ❌ (Access Denied - 403) |
-| **Purchase Orders (Week 3 Preview)** | `/purchase-orders` | ✅ | ✅ | ✅ | ✅ (Own Awarded POs) |
+| **Manager Approvals** | `/approvals` | ✅ Queue & Decide | ❌ (Forbidden - 403) | ✅ Queue & Decide | ❌ (Forbidden - 403) |
+| **Purchase Orders** | `/purchase-orders` | ✅ Full Access | ✅ Create & Manage | ✅ View Only | ✅ (Own Awarded POs Only) |
+| **Invoices Directory** | `/invoices` | ✅ Full Access | ✅ Create & View | ✅ View Only | ✅ (Own Invoices Only) |
+| **Download Invoice PDF** | `/api/invoices/:id/pdf` | ✅ | ✅ | ✅ | ✅ (Own Invoices Only) |
+| **Transmit Invoice Email** | `/api/invoices/:id/email` | ✅ | ✅ | ❌ | ✅ (Trusted Company Address) |
+| **Mark Invoice Paid** | `/api/invoices/:id/mark-paid` | ✅ (Authorized) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
 
 ---
 
@@ -123,6 +177,7 @@ d:\Kagnus/
 ### Prerequisites
 - Node.js (v18.0.0 or later)
 - npm (v9.0.0 or later)
+- PostgreSQL (v15 or later, or Cloud Neon PostgreSQL)
 
 ### Installation
 ```bash
@@ -133,36 +188,52 @@ cd d:\Kagnus
 npm run install:all
 ```
 
-### Environment Configuration
+### Environment Configuration & Variables Reference
+
 Copy `.env.example` to `server/.env`:
 ```bash
-cp .env.example server/.env
+cp server/.env.example server/.env
 ```
 
-Key variables in `server/.env`:
-```env
-PORT=5000
-NODE_ENV=development
-CLIENT_ORIGIN=http://localhost:3000
+#### Required Environment Variables
+| Variable | Description | Example / Default |
+| :--- | :--- | :--- |
+| `PORT` | Backend server port | `5000` |
+| `NODE_ENV` | Runtime environment (`development`, `production`, `test`) | `development` |
+| `CLIENT_ORIGIN` | Allowed CORS origin(s) | `http://localhost:3000` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/db?schema=public` |
+| `JWT_SECRET` | Secret key for JWT session signing (min 32 chars) | `vendorbridge_super_secure_jwt_secret_key_at_least_32_chars` |
+| `JWT_EXPIRES_IN` | Token validity period | `7d` |
+| `ADMIN_INVITE_CODE` | Code required to register privileged roles | `ADMIN_SECURE_SETUP_2025` |
 
-# Cloud PostgreSQL (Neon DB) Connection
-DATABASE_URL="postgresql://neondb_owner:password@ep-placeholder.us-east-2.aws.neon.tech/neondb?sslmode=require"
+#### Optional SMTP Environment Variables (Email Transmission)
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `SMTP_HOST` | Outgoing SMTP mail server hostname | `smtp.gmail.com` / `smtp.mailgun.org` |
+| `SMTP_PORT` | SMTP port (465 for SSL, 587 for TLS) | `587` |
+| `SMTP_USER` | SMTP username or account email | `billing@vendorbridge.com` |
+| `SMTP_PASS` | SMTP password or app-specific password | `app_password_here` |
+| `SMTP_FROM` | Sender display name and address | `VendorBridge Billing <billing@vendorbridge.com>` |
 
-# JWT Secret
-JWT_SECRET=vendorbridge_super_secure_jwt_secret_key_at_least_32_chars_long
+*Note: If SMTP credentials are not configured, the system gracefully and truthfully returns `code: "EMAIL_NOT_CONFIGURED"` without crashing or faking delivery.*
 
-# Role escalation guard
-ADMIN_INVITE_CODE=ADMIN_SECURE_SETUP_2025
+### Database Migration & Seeding
+
+Deploy schema migrations and seed the idempotent baseline dataset:
+```bash
+# Navigate to backend directory
+cd server
+
+# 1. Apply all versioned migrations in chronological order
+npx prisma migrate deploy
+
+# 2. Seed pre-configured baseline accounts, vendors, and RFQs
+npx ts-node prisma/seed.ts
 ```
 
 ---
 
 ## 6. Accessing & Running the Application
-
-### 🌐 Live Production Deployment
-- **Live Frontend (Vercel):** [https://vendorbridge-gilt.vercel.app/](https://vendorbridge-gilt.vercel.app/)
-- **Live Backend API (Render):** [https://vendorbridge-s1qv.onrender.com](https://vendorbridge-s1qv.onrender.com)
-- **Live Health Endpoint:** [https://vendorbridge-s1qv.onrender.com/api/health](https://vendorbridge-s1qv.onrender.com/api/health)
 
 ### Local Development Mode
 ```bash
@@ -176,19 +247,34 @@ npm run dev
 
 ## 7. Testing & Verification
 
-Run the unified backend test suite covering Week 1 and Week 2 workflows:
+Run the comprehensive automated test suite covering all Week 1, Week 2, and Week 3 workflows:
 ```bash
 cd server
 npm test
 ```
 
-### Test Suite Execution Output
+To run test files sequentially against a local PostgreSQL test database:
+```bash
+cd server
+$env:TEST_DATABASE_URL="postgresql://user:pass@127.0.0.1:5432/test_db?schema=public"; npx vitest run --no-file-parallelism
 ```
- ✓ src/tests/auth_vendor.test.ts (28 tests)
- ✓ src/tests/rfq_quotation.test.ts (14 tests)
 
- Test Files  2 passed (2)
-      Tests  42 passed (42)
+### Test Suite Execution Output (138 Tests Passing)
+```
+ ✓ src/tests/invoice_matching.test.ts (30 tests)
+ ✓ src/tests/auth_vendor.test.ts (28 tests)
+ ✓ src/tests/approval_workflow.test.ts (15 tests)
+ ✓ src/tests/rfq_quotation.test.ts (14 tests)
+ ✓ src/tests/e2e_audit_workflow.test.ts (12 tests)
+ ✓ src/tests/po_generation.test.ts (11 tests)
+ ✓ src/tests/attachment_security.test.ts (7 tests)
+ ✓ src/tests/sequence_isolated.test.ts (7 tests)
+ ✓ src/tests/test_db_guard.test.ts (7 tests)
+ ✓ src/tests/comparison_adapter.test.ts (5 tests)
+ ✓ src/tests/sequence_live_pg.test.ts (2 tests)
+
+ Test Files  11 passed (11)
+      Tests  138 passed (138)
 ```
 
 ### Production Build Verification
@@ -204,19 +290,20 @@ Both builds compile with **exit code 0** and zero TypeScript errors.
 
 ---
 
-## 8. Demo Credentials (Pre-Seeded)
+## 8. Local Demo & Development Seed Credentials
 
-All demo accounts share the password: `VendorBridge@2025`
+> [!CAUTION]
+> **LOCAL DEMO / DEVELOPMENT ONLY**: The credentials listed below are strictly for local evaluation, automated integration testing, and development demonstration using the seeded baseline database (`prisma/seed.ts`). They must **NEVER** be used in, shared with, or presented as production credentials. Production deployments enforce unique administrator secrets, strong randomly generated credentials, and individual user-set passwords.
 
-| Role | Email | Capabilities in Week 2 |
-| :--- | :--- | :--- |
-| **System Admin** | `admin@vendorbridge.com` | Full system access, vendor deletion, RFQ management, quotation selection |
-| **Procurement Officer** | `officer@vendorbridge.com` | Create RFQs, invite vendors, compare bids in matrix, "Select for Approval" |
-| **Manager / Approver** | `manager@vendorbridge.com` | View RFQ statuses and comparison matrices in read-only mode |
-| **Vendor Partner** | `vendor@infrasupplies.com` | View assigned RFQs, save drafts, submit itemized quotations (Infra Supplies) |
-| **Vendor Partner (Alt)** | `techcore@vendorbridge.com` | Competing vendor profile (TechCore Solutions) |
+All pre-seeded local development accounts share the default development password: `VendorBridge@2025`
 
-*Tip: Use the **Role Switcher** in the sidebar to switch between Procurement Officer and Vendor roles to experience the end-to-end RFQ dispatch $\rightarrow$ vendor bidding $\rightarrow$ comparison workflow.*
+| Role | Email | Status in Seed Data | Capabilities in Week 3 |
+| :--- | :--- | :---: | :--- |
+| **System Admin** | `admin@vendorbridge.com` | Pre-Seeded | Full system access, vendor management, quotation approvals, mark invoices as PAID |
+| **Procurement Officer** | `officer@vendorbridge.com` | Pre-Seeded | Create RFQs, compare bids, select quotations, generate POs, generate Invoices |
+| **Manager / Approver** | `manager@vendorbridge.com` | Pre-Seeded | Review approval queue (`/approvals`), APPROVE or REJECT quotation commercial terms |
+| **Vendor Partner** | `vendor@infrasupplies.com` | Pre-Seeded | View assigned RFQs, submit quotations, view awarded POs, download own invoice PDFs (Infra Supplies) |
+| **Self-Registered Vendor** | Register via `/register` | Dynamic | Any new user registered without an invite code automatically defaults to `VENDOR` role for testing multi-vendor isolation |
 
 ---
 
@@ -239,14 +326,112 @@ All demo accounts share the password: `VendorBridge@2025`
 - `GET    /api/rfqs` — List RFQs (scoped by role: all for officers, invited-only for vendors)
 - `POST   /api/rfqs` — Create RFQ with BOM line items and vendor assignments
 - `GET    /api/rfqs/:id` — View RFQ details, line items, and attachments
-- `PATCH  /api/rfqs/:id` — Update RFQ details (Officer/Admin only)
-- `POST   /api/rfqs/:id/attachments` — Upload attachment (Multer memory, 5MB limit, stored in PostgreSQL bytes)
-- `GET    /api/rfqs/:id/attachments/:attachmentId` — Download attachment (authenticated & authorized)
-- `GET    /api/rfqs/:id/comparison` — Side-by-side comparison matrix with L1 calculation (strictly forbidden for vendors)
-- `POST   /api/rfqs/:id/select-quotation` — Select winning quotation for approval (atomic transaction)
+- `POST   /api/rfqs/:id/select-quotation` — Select winning quotation for approval
 
 ### Quotations (`/api/quotations`)
 - `GET    /api/quotations` — List quotations (filtered by `rfqId` or current vendor)
 - `POST   /api/quotations` — Submit quotation or save draft (verifies deadline, status, and line items)
 - `GET    /api/quotations/:id` — Get quotation details by ID
-- `PATCH  /api/quotations/:id` — Edit quotation before submission deadline
+
+### Approvals (`/api/approvals`)
+- `GET    /api/approvals` — Query approval requests (`status=PENDING`, `status=APPROVED`, etc.)
+- `GET    /api/approvals/:id` — Get approval details, quotation line items, and audit history
+- `POST   /api/approvals/:id/decide` — Record managerial decision (`APPROVE` or `REJECT`) with remarks
+
+### Purchase Orders (`/api/purchase-orders`)
+- `GET    /api/purchase-orders` — List POs with status filters and vendor scoping
+- `GET    /api/purchase-orders/:id` — View full PO details, line items, and financial totals
+- `POST   /api/purchase-orders/generate` — Generate PO from approved quotation (`PO-YYYY-XXXX`)
+
+### Invoices (`/api/invoices`)
+- `GET    /api/invoices` — List invoices (filtered by status, search, or vendor isolation)
+- `GET    /api/invoices/:id` — View invoice details, 3-way matching result, and tax breakdown
+- `POST   /api/invoices` — Generate invoice from eligible PO (`INV-YYYY-XXXX`)
+- `GET    /api/invoices/:id/pdf` — Stream official PDF invoice document
+- `POST   /api/invoices/:id/email` — Transmit invoice PDF via SMTP (with vendor recipient whitelist)
+- `POST   /api/invoices/:id/mark-paid` — Mark invoice as paid (Admin only, records audit trail)
+
+---
+
+## 10. Manual Screenshot & UI Verification Evidence
+
+The genuine application screenshots captured from the local development environment are stored under `docs/screenshots/` and referenced below:
+
+### 1. RFQ Creation (Screen 5)
+- **Route:** `/rfqs` → Click `+ Create RFQ`
+- **Recommended User:** `officer@vendorbridge.com` (Procurement Officer)
+- **Key Elements Shown:** Delivery location, submission deadline datepicker, multi-item BOM table (description, quantity, UOM, target price), and vendor invitation multi-select.
+
+![01 - RFQ Creation](docs/screenshots/01_rfq_creation.png)
+
+---
+
+### 2. Quotation Comparison Matrix (Screen 7)
+- **Route:** `/quotations` (or click `Compare Bids` on any closed/submitted RFQ)
+- **Recommended User:** `officer@vendorbridge.com` (Procurement Officer)
+- **Key Elements Shown:** Side-by-side comparison matrix, itemized rates from competing vendors, automated `L1 Lowest Bidder` badge in muted teal, and `Select for Approval` action button.
+
+![02 - Quotation Comparison Matrix](docs/screenshots/02_quotation_comparison.png)
+
+---
+
+### 3. Approvals Queue & Managerial Decision
+- **Route:** `/approvals`
+- **Recommended User:** `manager@vendorbridge.com` (Manager / Approver)
+- **Key Elements Shown:** Pending approvals queue, source RFQ and quotation summaries, and the decision modal with remarks field and `APPROVE` / `REJECT` actions.
+
+![03 - Approvals Queue & Decision](docs/screenshots/03_approvals_decision.png)
+
+---
+
+### 4. Purchase Order List & Details
+- **Route:** `/purchase-orders` → View any PO detail modal or page
+- **Recommended User:** `officer@vendorbridge.com` or `admin@vendorbridge.com`
+- **Key Elements Shown:** `PO-YYYY-XXXX` atomic sequence number, `APPROVED` badge, copied line items, vendor details, and server-side Decimal totals.
+
+![04 - Purchase Orders](docs/screenshots/04_purchase_orders.png)
+
+---
+
+### 5. Invoice Management & 3-Way Matching
+- **Route:** `/invoices` → Click any invoice to view details
+- **Recommended User:** `officer@vendorbridge.com` or `admin@vendorbridge.com`
+- **Key Elements Shown:** `INV-YYYY-XXXX` sequence number, `PENDING_PAYMENT` badge, intra-state CGST+SGST or inter-state IGST tax breakdown, and the green `3-Way Matching Verified` badge.
+
+![05 - Invoice & 3-Way Matching](docs/screenshots/05_invoice_matching.png)
+
+---
+
+### 6. Official PDF Invoice Document
+- **Route:** `/invoices` → Click `Download PDF` (or `/api/invoices/:id/pdf`)
+- **Recommended User:** Any authorized user or vendor owner
+- **Key Elements Shown:** Downloaded or rendered PDF document showing company header, vendor details, GSTIN, line items table, GST breakdown, and verification footer.
+
+![06 - Invoice PDF Document](docs/screenshots/06_invoice_pdf.png)
+
+---
+
+### 7. Administrator Payment Authorization Modal
+- **Route:** `/invoices` → Click `Mark as Paid` on an eligible invoice
+- **Recommended User:** `admin@vendorbridge.com` (Admin only)
+- **Key Elements Shown:** Payment authorization modal with transaction reference notes input (e.g., bank UTR number) prior to submission.
+
+![07 - Admin Payment Authorization](docs/screenshots/07_admin_payment.png)
+
+---
+
+### 8. Vendor Data Isolation View
+- **Route:** `/dashboard`, `/purchase-orders`, `/invoices`
+- **Recommended User:** `vendor@infrasupplies.com` (Vendor Partner)
+- **Key Elements Shown:** Vendor portal restricted strictly to their own awarded purchase orders and invoices, with no access to competitor quotations, internal approval queues, or other vendors' documents.
+
+![08 - Vendor Data Isolation](docs/screenshots/08_vendor_isolation.png)
+
+---
+
+### 9. Completed Invoice Payment Confirmation
+- **Route:** `/invoices` → Click on paid invoice
+- **Recommended User:** `admin@vendorbridge.com` or `officer@vendorbridge.com`
+- **Key Elements Shown:** Invoice detail displaying updated `PAID` status badge in emerald green, `Paid on:` timestamp, line items, and the authoritative 3-Way Match Verification Card (`100% RECONCILED`).
+
+![09 - Invoice Paid Confirmation](docs/screenshots/09_invoice_paid_confirmation.png)

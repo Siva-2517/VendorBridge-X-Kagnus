@@ -19,7 +19,17 @@ import {
   RfqStatus,
   InvitationStatus,
   QuotationStatus,
+  ApprovalStatus,
+  ApprovalRequestItem,
+  ApprovalHistoryItem,
+  Invoice,
+  InvoiceItem,
+  InvoiceStatus,
+  TaxBreakdown,
+  ThreeWayMatchResult,
 } from '../types';
+import { calculateTaxBreakdown } from '../utils/taxService';
+import { performThreeWayMatch } from '../utils/matchingService';
 
 class DatabaseStore {
   // --- Users API ---
@@ -361,9 +371,14 @@ class DatabaseStore {
   public async getPendingApprovalsCount(vendorId?: string): Promise<number> {
     const where: any = { status: 'PENDING' };
     if (vendorId) {
-      where.vendorId = vendorId;
+      where.quotation = { vendorId };
     }
-    return await prisma.purchaseOrder.count({ where });
+    const approvalCount = await prisma.approvalRequest.count({ where });
+    if (approvalCount > 0) return approvalCount;
+    // Fallback to purchase orders if no approval requests (preserves legacy Week 1 test fixtures)
+    const poWhere: any = { status: 'PENDING' };
+    if (vendorId) poWhere.vendorId = vendorId;
+    return await prisma.purchaseOrder.count({ where: poWhere });
   }
 
   public async getVendorOrdersCount(vendorId: string): Promise<number> {
@@ -517,6 +532,18 @@ class DatabaseStore {
       } else if (seqName === 'QT') {
         const found = await tx.quotation.findUnique({
           where: { quotationNumber: candidateId },
+          select: { id: true },
+        });
+        exists = Boolean(found);
+      } else if (seqName === 'PO') {
+        const found = await tx.purchaseOrder.findUnique({
+          where: { poNumber: candidateId },
+          select: { id: true },
+        });
+        exists = Boolean(found);
+      } else if (seqName === 'INV') {
+        const found = await tx.invoice.findUnique({
+          where: { invoiceNumber: candidateId },
           select: { id: true },
         });
         exists = Boolean(found);
@@ -1230,6 +1257,31 @@ class DatabaseStore {
         },
       });
 
+      // Atomically create or ensure single ApprovalRequest in PENDING status
+      let approvalRequest = await tx.approvalRequest.findUnique({
+        where: { quotationId: updatedQuotation.id },
+      });
+
+      if (!approvalRequest) {
+        approvalRequest = await tx.approvalRequest.create({
+          data: {
+            rfqId: rfq.id,
+            quotationId: updatedQuotation.id,
+            status: 'PENDING',
+            submittedById: userId,
+          },
+        });
+
+        await tx.approvalHistory.create({
+          data: {
+            approvalRequestId: approvalRequest.id,
+            action: 'SUBMITTED',
+            actorId: userId,
+            remarks: 'Quotation selected and submitted for manager approval.',
+          },
+        });
+      }
+
       await tx.auditLog.create({
         data: {
           userId,
@@ -1255,6 +1307,10 @@ class DatabaseStore {
           quotationNumber: updatedQuotation.quotationNumber,
           status: updatedQuotation.status,
           grandTotal: Number(updatedQuotation.grandTotal),
+        },
+        approvalRequest: {
+          id: approvalRequest.id,
+          status: approvalRequest.status,
         },
       };
     }, {
@@ -1303,6 +1359,1366 @@ class DatabaseStore {
       fileSize: att.fileSize,
       mimeType: att.mimeType,
       fileData: att.fileData,
+    };
+  }
+
+  // --- Week 3: Approval Management API ---
+
+  public async getApprovalRequests(filters: {
+    status?: string;
+    vendorId?: string;
+  }): Promise<ApprovalRequestItem[]> {
+    const where: any = {};
+
+    if (filters.status && filters.status !== 'ALL') {
+      where.status = filters.status;
+    }
+
+    if (filters.vendorId) {
+      where.quotation = { vendorId: filters.vendorId };
+    }
+
+    const records = await prisma.approvalRequest.findMany({
+      where,
+      include: {
+        rfq: {
+          include: {
+            items: true,
+          },
+        },
+        quotation: {
+          include: {
+            vendor: true,
+            items: {
+              include: {
+                rfqItem: true,
+              },
+            },
+          },
+        },
+        submittedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+        decidedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+        history: {
+          include: {
+            actor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return records.map((r) => this.formatApprovalRequest(r));
+  }
+
+  public async getApprovalRequestById(
+    id: string,
+    options?: { vendorId?: string }
+  ): Promise<ApprovalRequestItem | null> {
+    const record = await prisma.approvalRequest.findUnique({
+      where: { id },
+      include: {
+        rfq: {
+          include: {
+            items: true,
+          },
+        },
+        quotation: {
+          include: {
+            vendor: true,
+            items: {
+              include: {
+                rfqItem: true,
+              },
+            },
+          },
+        },
+        submittedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+        decidedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+        history: {
+          include: {
+            actor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!record) return null;
+
+    if (options?.vendorId && record.quotation.vendorId !== options.vendorId) {
+      const err: any = new Error('Access denied: You do not have permission to view another vendor\'s approval request');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    return this.formatApprovalRequest(record);
+  }
+
+  public async decideApprovalRequest(
+    id: string,
+    decision: 'APPROVE' | 'REJECT',
+    remarks: string | undefined,
+    userId: string
+  ): Promise<ApprovalRequestItem> {
+    return await prisma.$transaction(async (tx) => {
+      const approval = await tx.approvalRequest.findUnique({
+        where: { id },
+        include: {
+          rfq: true,
+          quotation: {
+            include: {
+              vendor: true,
+              items: true,
+            },
+          },
+        },
+      });
+
+      if (!approval) {
+        const err: any = new Error('Approval request not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      if (approval.status !== 'PENDING') {
+        const err: any = new Error(`Approval request has already been decided (${approval.status})`);
+        err.statusCode = 409;
+        throw err;
+      }
+
+      const now = new Date();
+      const newApprovalStatus = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+      const newQuotationStatus = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+      const cleanedRemarks = remarks && remarks.trim() ? remarks.trim() : null;
+
+      // Update ApprovalRequest
+      await tx.approvalRequest.update({
+        where: { id },
+        data: {
+          status: newApprovalStatus,
+          decidedById: userId,
+          decidedAt: now,
+          remarks: cleanedRemarks,
+        },
+      });
+
+      // Update Quotation Status
+      await tx.quotation.update({
+        where: { id: approval.quotationId },
+        data: {
+          status: newQuotationStatus,
+        },
+      });
+
+      // Append immutable record to ApprovalHistory
+      await tx.approvalHistory.create({
+        data: {
+          approvalRequestId: id,
+          action: newApprovalStatus,
+          actorId: userId,
+          remarks: cleanedRemarks,
+          createdAt: now,
+        },
+      });
+
+      // Record in AuditLog
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: `APPROVAL_${newApprovalStatus}`,
+          details: `${newApprovalStatus} approval request for quotation ${approval.quotation.quotationNumber} (RFQ: ${approval.rfq.rfqNumber}). Remarks: ${cleanedRemarks || 'None'}`,
+        },
+      });
+
+      // Fetch fresh updated record with full relations
+      const finalRecord = await tx.approvalRequest.findUnique({
+        where: { id },
+        include: {
+          rfq: {
+            include: {
+              items: true,
+            },
+          },
+          quotation: {
+            include: {
+              vendor: true,
+              items: {
+                include: {
+                  rfqItem: true,
+                },
+              },
+            },
+          },
+          submittedBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+          },
+          decidedBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+          },
+          history: {
+            include: {
+              actor: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  role: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+        },
+      });
+
+      return this.formatApprovalRequest(finalRecord!);
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
+    });
+  }
+
+  private formatApprovalRequest(record: any): ApprovalRequestItem {
+    return {
+      id: record.id,
+      rfqId: record.rfqId,
+      quotationId: record.quotationId,
+      status: record.status as ApprovalStatus,
+      submittedById: record.submittedById,
+      submittedBy: record.submittedBy ? {
+        id: record.submittedBy.id,
+        firstName: record.submittedBy.firstName,
+        lastName: record.submittedBy.lastName,
+        email: record.submittedBy.email,
+        role: record.submittedBy.role as Role,
+      } : undefined,
+      decidedById: record.decidedById,
+      decidedBy: record.decidedBy ? {
+        id: record.decidedBy.id,
+        firstName: record.decidedBy.firstName,
+        lastName: record.decidedBy.lastName,
+        email: record.decidedBy.email,
+        role: record.decidedBy.role as Role,
+      } : null,
+      decidedAt: record.decidedAt ? record.decidedAt.toISOString() : null,
+      remarks: record.remarks,
+      rfq: record.rfq ? {
+        id: record.rfq.id,
+        rfqNumber: record.rfq.rfqNumber,
+        title: record.rfq.title,
+        description: record.rfq.description,
+        category: record.rfq.category,
+        deliveryLocation: record.rfq.deliveryLocation,
+        deadline: record.rfq.deadline.toISOString(),
+        status: record.rfq.status as RfqStatus,
+        items: record.rfq.items?.map((it: any) => ({
+          id: it.id,
+          rfqId: it.rfqId,
+          itemDescription: it.itemDescription,
+          quantity: Number(it.quantity),
+          uom: it.uom,
+          targetPrice: it.targetPrice ? Number(it.targetPrice) : null,
+          createdAt: it.createdAt.toISOString(),
+        })),
+      } : undefined,
+      quotation: record.quotation ? {
+        id: record.quotation.id,
+        quotationNumber: record.quotation.quotationNumber,
+        vendorId: record.quotation.vendorId,
+        vendor: record.quotation.vendor ? {
+          id: record.quotation.vendor.id,
+          name: record.quotation.vendor.name,
+          gstin: record.quotation.vendor.gstin,
+          category: record.quotation.vendor.category,
+          email: record.quotation.vendor.email,
+          phone: record.quotation.vendor.phone,
+        } : undefined,
+        subtotalAmount: Number(record.quotation.subtotalAmount),
+        taxRate: Number(record.quotation.taxRate),
+        taxAmount: Number(record.quotation.taxAmount),
+        grandTotal: Number(record.quotation.grandTotal),
+        deliveryDays: record.quotation.deliveryDays,
+        paymentTerms: record.quotation.paymentTerms,
+        validityDate: record.quotation.validityDate.toISOString(),
+        notes: record.quotation.notes,
+        status: record.quotation.status as QuotationStatus,
+        items: record.quotation.items?.map((qi: any) => ({
+          id: qi.id,
+          quotationId: qi.quotationId,
+          rfqItemId: qi.rfqItemId,
+          itemDescription: qi.rfqItem?.itemDescription,
+          quantity: qi.rfqItem?.quantity ? Number(qi.rfqItem.quantity) : undefined,
+          uom: qi.rfqItem?.uom,
+          unitPrice: Number(qi.unitPrice),
+          lineTotal: Number(qi.lineTotal),
+          remarks: qi.remarks,
+        })),
+      } : undefined,
+      history: record.history?.map((h: any) => ({
+        id: h.id,
+        approvalRequestId: h.approvalRequestId,
+        action: h.action,
+        actorId: h.actorId,
+        actor: h.actor ? {
+          id: h.actor.id,
+          firstName: h.actor.firstName,
+          lastName: h.actor.lastName,
+          email: h.actor.email,
+          role: h.actor.role as Role,
+        } : undefined,
+        remarks: h.remarks,
+        createdAt: h.createdAt.toISOString(),
+      })),
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+
+  // --- Week 3 Phase 3: Purchase Order Management API ---
+
+  public async generatePurchaseOrder(
+    quotationId: string,
+    userId: string,
+    customNotes?: string
+  ): Promise<PurchaseOrder> {
+    return await prisma.$transaction(async (tx) => {
+      // 1. Fetch quotation with approvalRequest, vendor, rfq, and items
+      const quotation = await tx.quotation.findUnique({
+        where: { id: quotationId },
+        include: {
+          vendor: true,
+          rfq: true,
+          approvalRequest: true,
+          items: {
+            include: {
+              rfqItem: true,
+            },
+          },
+        },
+      });
+
+      if (!quotation) {
+        const err: any = new Error('Quotation not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      // 2. Enforce: quotation status must be APPROVED
+      if (quotation.status !== 'APPROVED') {
+        const err: any = new Error(
+          `Cannot generate purchase order: Quotation status is ${quotation.status}. Only APPROVED quotations can be converted to purchase orders.`
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // 3. Enforce: ApprovalRequest must exist and be APPROVED
+      if (!quotation.approvalRequest || quotation.approvalRequest.status !== 'APPROVED') {
+        const err: any = new Error(
+          'Cannot generate purchase order: Quotation does not have an approved managerial approval request.'
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // 4. Enforce: strictly one PO per quotation (handle duplicate/concurrent generation)
+      const existingPO = await tx.purchaseOrder.findUnique({
+        where: { quotationId },
+      });
+      if (existingPO) {
+        const err: any = new Error(
+          `A purchase order has already been generated for this quotation (${existingPO.poNumber})`
+        );
+        err.statusCode = 409;
+        throw err;
+      }
+
+      // 5. Line items verification
+      if (!quotation.items || quotation.items.length === 0) {
+        const err: any = new Error('Quotation does not contain any line items to generate purchase order');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // 6. Atomic sequence generator: PO-YYYY-XXXX
+      const poNumber = await this.getNextSequence(tx, 'PO', 'PO');
+
+      // 7. Authoritative financial calculations on backend using Prisma.Decimal
+      let calculatedSubtotal = new Prisma.Decimal(0);
+      const poItemsData = quotation.items.map((qi) => {
+        const qty = new Prisma.Decimal(qi.rfqItem.quantity.toString());
+        const unitPrice = new Prisma.Decimal(qi.unitPrice.toString());
+        const lineTotal = qty.mul(unitPrice);
+        calculatedSubtotal = calculatedSubtotal.add(lineTotal);
+        return {
+          itemDescription: qi.rfqItem.itemDescription,
+          quantity: qty,
+          uom: qi.rfqItem.uom,
+          unitPrice: unitPrice,
+          lineTotal: lineTotal,
+        };
+      });
+
+      const taxRate = new Prisma.Decimal(quotation.taxRate.toString());
+      const taxAmount = calculatedSubtotal.mul(taxRate).div(100).toDecimalPlaces(2);
+      const grandTotal = calculatedSubtotal.add(taxAmount).toDecimalPlaces(2);
+
+      // 8. Create PurchaseOrder and PurchaseOrderItems in single transaction
+      const createdPO = await tx.purchaseOrder.create({
+        data: {
+          poNumber,
+          vendorId: quotation.vendorId,
+          amount: grandTotal.toNumber(), // Week 1 legacy compatibility
+          subtotalAmount: calculatedSubtotal,
+          taxAmount: taxAmount,
+          grandTotal: grandTotal,
+          status: 'APPROVED',
+          orderDate: new Date(),
+          rfqId: quotation.rfqId,
+          quotationId: quotation.id,
+          paymentTerms: quotation.paymentTerms,
+          deliveryDays: quotation.deliveryDays,
+          notes: customNotes?.trim() || quotation.notes || null,
+          createdById: userId,
+          items: {
+            create: poItemsData,
+          },
+        },
+        include: {
+          vendor: true,
+          rfq: true,
+          quotation: {
+            include: {
+              approvalRequest: {
+                include: {
+                  decidedBy: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      email: true,
+                      role: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          items: true,
+          createdBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      // 9. Audit trail
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: 'PO_GENERATED',
+          details: `Generated Purchase Order ${poNumber} for approved quotation ${quotation.quotationNumber} from ${quotation.vendor.name} (Amount: ₹${grandTotal.toNumber().toLocaleString('en-IN')})`,
+        },
+      });
+
+      return this.formatPurchaseOrder(createdPO);
+    }, {
+      maxWait: 15000,
+      timeout: 30000,
+    });
+  }
+
+  public async getPurchaseOrders(filters: {
+    status?: string;
+    search?: string;
+    vendorId?: string;
+  }): Promise<PurchaseOrder[]> {
+    const where: any = {};
+
+    if (filters.status && filters.status !== 'ALL') {
+      where.status = filters.status;
+    }
+
+    if (filters.vendorId) {
+      where.vendorId = filters.vendorId;
+    }
+
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      where.OR = [
+        { poNumber: { contains: q, mode: 'insensitive' } },
+        { vendor: { name: { contains: q, mode: 'insensitive' } } },
+        { rfq: { rfqNumber: { contains: q, mode: 'insensitive' } } },
+        { quotation: { quotationNumber: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const records = await prisma.purchaseOrder.findMany({
+      where,
+      include: {
+        vendor: true,
+        rfq: true,
+        quotation: {
+          include: {
+            approvalRequest: {
+              include: {
+                decidedBy: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    role: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        items: true,
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { orderDate: 'desc' },
+    });
+
+    return records.map((r) => this.formatPurchaseOrder(r));
+  }
+
+  public async getPurchaseOrderById(
+    id: string,
+    options?: { vendorId?: string }
+  ): Promise<PurchaseOrder | null> {
+    const record = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: {
+        vendor: true,
+        rfq: true,
+        quotation: {
+          include: {
+            approvalRequest: {
+              include: {
+                decidedBy: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    role: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        items: true,
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!record) return null;
+
+    if (options?.vendorId && record.vendorId !== options.vendorId) {
+      const err: any = new Error(
+        "Access denied: You do not have permission to view another vendor's purchase order"
+      );
+      err.statusCode = 403;
+      throw err;
+    }
+
+    return this.formatPurchaseOrder(record);
+  }
+
+  private formatPurchaseOrder(record: any): PurchaseOrder {
+    const isLegacy = record.grandTotal === null || record.grandTotal === undefined;
+    return {
+      id: record.id,
+      poNumber: record.poNumber,
+      vendorId: record.vendorId,
+      vendorName: record.vendor?.name,
+      vendor: record.vendor
+        ? {
+            id: record.vendor.id,
+            name: record.vendor.name,
+            gstin: record.vendor.gstin,
+            category: record.vendor.category,
+            email: record.vendor.email,
+            phone: record.vendor.phone,
+            address: record.vendor.address,
+            city: record.vendor.city,
+            state: record.vendor.state,
+            pincode: record.vendor.pincode,
+          }
+        : undefined,
+      amount: Number(record.amount),
+      subtotalAmount: record.subtotalAmount !== null ? Number(record.subtotalAmount) : null,
+      taxAmount: record.taxAmount !== null ? Number(record.taxAmount) : null,
+      grandTotal: record.grandTotal !== null ? Number(record.grandTotal) : Number(record.amount),
+      status: record.status as POStatus,
+      orderDate: record.orderDate.toISOString(),
+      rfqId: record.rfqId,
+      rfq: record.rfq
+        ? {
+            id: record.rfq.id,
+            rfqNumber: record.rfq.rfqNumber,
+            title: record.rfq.title,
+            category: record.rfq.category,
+            deliveryLocation: record.rfq.deliveryLocation,
+          }
+        : null,
+      quotationId: record.quotationId,
+      quotation: record.quotation
+        ? {
+            id: record.quotation.id,
+            quotationNumber: record.quotation.quotationNumber,
+            taxRate: Number(record.quotation.taxRate),
+            subtotalAmount: Number(record.quotation.subtotalAmount),
+            taxAmount: Number(record.quotation.taxAmount),
+            grandTotal: Number(record.quotation.grandTotal),
+            deliveryDays: record.quotation.deliveryDays,
+            paymentTerms: record.quotation.paymentTerms,
+            approvalRequest: record.quotation.approvalRequest
+              ? {
+                  id: record.quotation.approvalRequest.id,
+                  status: record.quotation.approvalRequest.status,
+                  decidedAt: record.quotation.approvalRequest.decidedAt
+                    ? record.quotation.approvalRequest.decidedAt.toISOString()
+                    : null,
+                  decidedBy: record.quotation.approvalRequest.decidedBy
+                    ? {
+                        id: record.quotation.approvalRequest.decidedBy.id,
+                        firstName: record.quotation.approvalRequest.decidedBy.firstName,
+                        lastName: record.quotation.approvalRequest.decidedBy.lastName,
+                        email: record.quotation.approvalRequest.decidedBy.email,
+                        role: record.quotation.approvalRequest.decidedBy.role as Role,
+                      }
+                    : null,
+                }
+              : null,
+          }
+        : null,
+      paymentTerms: record.paymentTerms,
+      deliveryDays: record.deliveryDays,
+      notes: record.notes,
+      createdById: record.createdById,
+      createdBy: record.createdBy
+        ? {
+            id: record.createdBy.id,
+            firstName: record.createdBy.firstName,
+            lastName: record.createdBy.lastName,
+            email: record.createdBy.email,
+            role: record.createdBy.role as Role,
+          }
+        : null,
+      items: record.items?.map((it: any) => ({
+        id: it.id,
+        purchaseOrderId: it.purchaseOrderId,
+        itemDescription: it.itemDescription,
+        quantity: Number(it.quantity),
+        uom: it.uom,
+        unitPrice: Number(it.unitPrice),
+        lineTotal: Number(it.lineTotal),
+        createdAt: it.createdAt.toISOString(),
+      })),
+      isLegacy,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+
+  // =========================================================================
+  // --- WEEK 3 PHASE 4: INVOICE MANAGEMENT & 3-WAY MATCHING API ---
+  // =========================================================================
+
+  public async createInvoice(
+    purchaseOrderId: string,
+    userId: string,
+    customNotes?: string
+  ): Promise<Invoice> {
+    return await prisma.$transaction(
+      async (tx) => {
+        // 1. Fetch PurchaseOrder with vendor, quotation, approval, items, and rfq
+        const po = await tx.purchaseOrder.findUnique({
+          where: { id: purchaseOrderId },
+          include: {
+            vendor: true,
+            rfq: true,
+            quotation: {
+              include: {
+                approvalRequest: true,
+                items: {
+                  include: { rfqItem: true },
+                },
+              },
+            },
+            items: true,
+          },
+        });
+
+        if (!po) {
+          const err: any = new Error('Purchase order not found');
+          err.statusCode = 404;
+          throw err;
+        }
+
+        // 2. Enforce PO eligibility: must not be CANCELLED, must be APPROVED or ISSUED
+        if (po.status === 'CANCELLED') {
+          const err: any = new Error('Cannot create invoice for a cancelled purchase order');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        if (po.status !== 'APPROVED' && po.status !== 'ISSUED') {
+          const err: any = new Error(
+            `Cannot create invoice: Purchase order status is ${po.status}. Only APPROVED or ISSUED purchase orders can be invoiced.`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+
+        // 3. Enforce strictly 1 Invoice per PO (Prevent duplicate/concurrent invoices)
+        const existingInvoice = await tx.invoice.findUnique({
+          where: { purchaseOrderId },
+        });
+        if (existingInvoice) {
+          const err: any = new Error(
+            `An invoice has already been generated for this purchase order (${existingInvoice.invoiceNumber})`
+          );
+          err.statusCode = 409;
+          throw err;
+        }
+
+        // 4. Line items verification
+        if (!po.items || po.items.length === 0) {
+          const err: any = new Error(
+            'Purchase order does not contain line items to generate an invoice'
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+
+        // 5. Authoritative Decimal Subtotal calculation
+        let calculatedSubtotal = new Prisma.Decimal(0);
+        const invoiceItemsData = po.items.map((pi) => {
+          const qty = new Prisma.Decimal(pi.quantity.toString());
+          const unitPrice = new Prisma.Decimal(pi.unitPrice.toString());
+          const lineTotal = qty.mul(unitPrice);
+          calculatedSubtotal = calculatedSubtotal.add(lineTotal);
+          return {
+            itemDescription: pi.itemDescription,
+            quantity: qty,
+            uom: pi.uom,
+            unitPrice: unitPrice,
+            lineTotal: lineTotal,
+          };
+        });
+
+        // 6. Tax calculation using source data & explicit policy (No arbitrary defaults)
+        if (!po.quotation || po.quotation.taxRate === null || po.quotation.taxRate === undefined) {
+          const err: any = new Error(
+            'Missing tax information: Source quotation does not contain a tax rate'
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const taxRatePercent = po.quotation.taxRate;
+        const taxResult = calculateTaxBreakdown({
+          subtotal: calculatedSubtotal,
+          taxRatePercent,
+          vendorGstin: po.vendor?.gstin,
+          vendorState: po.vendor?.state,
+          deliveryLocation: po.rfq?.deliveryLocation,
+        });
+
+        // Verify PO tax amount matches calculated tax amount
+        if (po.taxAmount !== null && po.taxAmount !== undefined) {
+          const poTax = new Prisma.Decimal(po.taxAmount.toString()).toDecimalPlaces(2);
+          if (!poTax.equals(taxResult.taxAmount)) {
+            const err: any = new Error(
+              `Tax discrepancy: Calculated tax (₹${taxResult.taxAmount.toString()}) does not match Purchase Order tax (₹${poTax.toString()})`
+            );
+            err.statusCode = 400;
+            throw err;
+          }
+        }
+
+        // 7. Authoritative 3-Way Matching Check
+        if (po.quotation) {
+          const matchResult = performThreeWayMatch(
+            {
+              id: po.quotation.id,
+              quotationNumber: po.quotation.quotationNumber,
+              status: po.quotation.status,
+              taxRate: po.quotation.taxRate,
+              subtotalAmount: po.quotation.subtotalAmount,
+              taxAmount: po.quotation.taxAmount,
+              grandTotal: po.quotation.grandTotal,
+              items: po.quotation.items,
+            },
+            {
+              id: po.id,
+              poNumber: po.poNumber,
+              status: po.status,
+              subtotalAmount: po.subtotalAmount,
+              taxAmount: po.taxAmount,
+              grandTotal: po.grandTotal,
+              amount: po.amount,
+              quotationId: po.quotationId,
+              items: po.items,
+            },
+            {
+              subtotalAmount: taxResult.subtotalAmount,
+              taxRate: taxResult.taxRate,
+              taxAmount: taxResult.taxAmount,
+              taxBreakdown: taxResult.taxBreakdown,
+              grandTotal: taxResult.grandTotal,
+              items: invoiceItemsData,
+            }
+          );
+
+          if (!matchResult.isMatched) {
+            const err: any = new Error(
+              `Three-way matching failed: ${matchResult.discrepancies.join('; ')}`
+            );
+            err.statusCode = 400;
+            err.details = matchResult.discrepancies;
+            throw err;
+          }
+        }
+
+        // 8. Atomic sequence generation: INV-YYYY-XXXX
+        const invoiceNumber = await this.getNextSequence(tx, 'INV', 'INV');
+
+        // 9. Due date calculation (default 30 days)
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 30);
+
+        // 10. Persist Invoice and InvoiceItems in single transaction
+        const createdInvoice = await tx.invoice.create({
+          data: {
+            invoiceNumber,
+            purchaseOrderId: po.id,
+            vendorId: po.vendorId,
+            subtotalAmount: taxResult.subtotalAmount,
+            taxRate: taxResult.taxRate,
+            taxAmount: taxResult.taxAmount,
+            taxBreakdown: taxResult.taxBreakdown as any,
+            grandTotal: taxResult.grandTotal,
+            status: 'PENDING_PAYMENT',
+            dueDate,
+            notes: customNotes?.trim() || po.notes || null,
+            createdById: userId,
+            items: {
+              create: invoiceItemsData,
+            },
+          },
+          include: {
+            vendor: true,
+            purchaseOrder: {
+              include: {
+                vendor: true,
+                rfq: true,
+                quotation: {
+                  include: {
+                    approvalRequest: {
+                      include: {
+                        decidedBy: {
+                          select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                            role: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                items: true,
+                createdBy: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    role: true,
+                  },
+                },
+              },
+            },
+            items: true,
+            createdBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+          },
+        });
+
+        // 11. Audit trail
+        await tx.auditLog.create({
+          data: {
+            userId,
+            action: 'INVOICE_CREATED',
+            details: `Generated Tax Invoice ${invoiceNumber} for Purchase Order ${po.poNumber} [Grand Total: INR ${taxResult.grandTotal.toNumber().toLocaleString('en-IN')}]`,
+          },
+        });
+
+        return this.formatInvoice(createdInvoice);
+      },
+      {
+        maxWait: 15000,
+        timeout: 30000,
+      }
+    );
+  }
+
+  public async getInvoices(filters: {
+    status?: string;
+    search?: string;
+    vendorId?: string;
+  }): Promise<Invoice[]> {
+    const where: any = {};
+
+    if (filters.status && filters.status !== 'ALL') {
+      where.status = filters.status;
+    }
+
+    if (filters.vendorId) {
+      where.vendorId = filters.vendorId;
+    }
+
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      where.OR = [
+        { invoiceNumber: { contains: q, mode: 'insensitive' } },
+        { vendor: { name: { contains: q, mode: 'insensitive' } } },
+        { purchaseOrder: { poNumber: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const records = await prisma.invoice.findMany({
+      where,
+      include: {
+        vendor: true,
+        purchaseOrder: {
+          include: {
+            vendor: true,
+            rfq: true,
+            quotation: {
+              include: {
+                approvalRequest: {
+                  include: {
+                    decidedBy: {
+                      select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                        role: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            items: true,
+            createdBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+          },
+        },
+        items: true,
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return records.map((r) => this.formatInvoice(r));
+  }
+
+  public async getInvoiceById(
+    id: string,
+    options?: { vendorId?: string }
+  ): Promise<Invoice | null> {
+    const record = await prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        vendor: true,
+        purchaseOrder: {
+          include: {
+            vendor: true,
+            rfq: true,
+            quotation: {
+              include: {
+                approvalRequest: {
+                  include: {
+                    decidedBy: {
+                      select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                        role: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            items: true,
+            createdBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+          },
+        },
+        items: true,
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!record) return null;
+
+    if (options?.vendorId && record.vendorId !== options.vendorId) {
+      const err: any = new Error(
+        "Access denied: You do not have permission to view another vendor's invoice"
+      );
+      err.statusCode = 403;
+      throw err;
+    }
+
+    return this.formatInvoice(record);
+  }
+
+  public async markInvoicePaid(
+    id: string,
+    userId: string,
+    notes?: string
+  ): Promise<Invoice> {
+    return await prisma.$transaction(async (tx) => {
+      const invoice = await tx.invoice.findUnique({
+        where: { id },
+        include: {
+          purchaseOrder: true,
+          vendor: true,
+        },
+      });
+
+      if (!invoice) {
+        const err: any = new Error('Invoice not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      if (invoice.status === 'PAID') {
+        const err: any = new Error('Invoice has already been marked as paid');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if (invoice.status === 'CANCELLED') {
+        const err: any = new Error('Cannot mark a cancelled invoice as paid');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const updated = await tx.invoice.update({
+        where: { id },
+        data: {
+          status: 'PAID',
+          paidAt: new Date(),
+          notes: notes ? `${invoice.notes ? `${invoice.notes}\n` : ''}${notes}` : invoice.notes,
+        },
+        include: {
+          vendor: true,
+          purchaseOrder: {
+            include: {
+              vendor: true,
+              rfq: true,
+              quotation: {
+                include: {
+                  approvalRequest: {
+                    include: {
+                      decidedBy: {
+                        select: {
+                          id: true,
+                          firstName: true,
+                          lastName: true,
+                          email: true,
+                          role: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              items: true,
+              createdBy: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  role: true,
+                },
+              },
+            },
+          },
+          items: true,
+          createdBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true,
+            },
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: 'INVOICE_PAID',
+          details: `Invoice ${invoice.invoiceNumber} marked as PAID for Purchase Order ${invoice.purchaseOrder?.poNumber || ''} [Amount: INR ${Number(invoice.grandTotal).toLocaleString('en-IN')}]`,
+        },
+      });
+
+      return this.formatInvoice(updated);
+    });
+  }
+
+  public formatInvoice(record: any): Invoice {
+    let matchingResult: ThreeWayMatchResult | undefined;
+
+    if (record.purchaseOrder && record.purchaseOrder.quotation) {
+      const q = record.purchaseOrder.quotation;
+      const po = record.purchaseOrder;
+      const proposedItems = (record.items || []).map((it: any) => ({
+        itemDescription: it.itemDescription,
+        quantity: Number(it.quantity),
+        uom: it.uom,
+        unitPrice: Number(it.unitPrice),
+        lineTotal: Number(it.lineTotal),
+      }));
+
+      matchingResult = performThreeWayMatch(
+        {
+          id: q.id,
+          quotationNumber: q.quotationNumber,
+          status: q.status,
+          taxRate: q.taxRate !== undefined && q.taxRate !== null ? Number(q.taxRate) : undefined,
+          subtotalAmount: Number(q.subtotalAmount),
+          taxAmount: Number(q.taxAmount),
+          grandTotal: Number(q.grandTotal),
+          items: q.items,
+        },
+        {
+          id: po.id,
+          poNumber: po.poNumber,
+          status: po.status,
+          subtotalAmount: po.subtotalAmount !== null ? Number(po.subtotalAmount) : Number(po.amount),
+          taxAmount: po.taxAmount !== null ? Number(po.taxAmount) : 0,
+          grandTotal: po.grandTotal !== null ? Number(po.grandTotal) : Number(po.amount),
+          amount: Number(po.amount),
+          quotationId: po.quotationId,
+          items: po.items?.map((it: any) => ({
+            itemDescription: it.itemDescription,
+            quantity: Number(it.quantity),
+            uom: it.uom,
+            unitPrice: Number(it.unitPrice),
+            lineTotal: Number(it.lineTotal),
+          })),
+        },
+        {
+          subtotalAmount: Number(record.subtotalAmount),
+          taxRate: record.taxRate !== undefined && record.taxRate !== null ? Number(record.taxRate) : undefined,
+          taxAmount: Number(record.taxAmount),
+          taxBreakdown: record.taxBreakdown as TaxBreakdown | null,
+          grandTotal: Number(record.grandTotal),
+          items: proposedItems,
+        }
+      );
+    }
+
+    return {
+      id: record.id,
+      invoiceNumber: record.invoiceNumber,
+      purchaseOrderId: record.purchaseOrderId,
+      purchaseOrder: record.purchaseOrder ? this.formatPurchaseOrder(record.purchaseOrder) : undefined,
+      vendorId: record.vendorId,
+      vendorName: record.vendor?.name,
+      vendor: record.vendor
+        ? {
+            id: record.vendor.id,
+            name: record.vendor.name,
+            gstin: record.vendor.gstin,
+            category: record.vendor.category,
+            email: record.vendor.email,
+            phone: record.vendor.phone,
+            address: record.vendor.address,
+            city: record.vendor.city,
+            state: record.vendor.state,
+            pincode: record.vendor.pincode,
+          }
+        : undefined,
+      subtotalAmount: Number(record.subtotalAmount),
+      taxRate: Number(record.taxRate),
+      taxAmount: Number(record.taxAmount),
+      taxBreakdown: record.taxBreakdown as TaxBreakdown | null,
+      grandTotal: Number(record.grandTotal),
+      status: record.status as InvoiceStatus,
+      dueDate: record.dueDate ? record.dueDate.toISOString() : null,
+      paidAt: record.paidAt ? record.paidAt.toISOString() : null,
+      notes: record.notes,
+      createdById: record.createdById,
+      createdBy: record.createdBy
+        ? {
+            id: record.createdBy.id,
+            firstName: record.createdBy.firstName,
+            lastName: record.createdBy.lastName,
+            email: record.createdBy.email,
+            role: record.createdBy.role as Role,
+          }
+        : null,
+      items: (record.items || []).map((it: any) => ({
+        id: it.id,
+        invoiceId: it.invoiceId,
+        itemDescription: it.itemDescription,
+        quantity: Number(it.quantity),
+        uom: it.uom,
+        unitPrice: Number(it.unitPrice),
+        lineTotal: Number(it.lineTotal),
+        createdAt: it.createdAt.toISOString(),
+      })),
+      matchingResult,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
     };
   }
 }

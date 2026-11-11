@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { db } from '../db/store';
+import { prisma } from '../db/prisma';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { Role } from '../types';
 
@@ -18,6 +19,26 @@ export const getDashboardSummary = async (req: AuthenticatedRequest, res: Respon
       const totalOrdersCount = vendorId ? await db.getVendorOrdersCount(vendorId) : 0;
       const spendingTrends = vendorId ? await db.getSpendingTrends(vendorId) : [];
 
+      // Real database-backed operational metrics for Vendor
+      const activeRfqs = vendorId
+        ? await prisma.rfqVendorInvitation.count({
+            where: {
+              vendorId,
+              rfq: { status: 'OPEN' },
+            },
+          })
+        : 0;
+
+      const overdueInvoices = vendorId
+        ? await prisma.invoice.count({
+            where: {
+              vendorId,
+              status: 'PENDING_PAYMENT',
+              dueDate: { lt: new Date() },
+            },
+          })
+        : 0;
+
       const formattedSpend =
         totalSpend >= 100000
           ? `₹${(totalSpend / 100000).toFixed(2)}L`
@@ -31,11 +52,11 @@ export const getDashboardSummary = async (req: AuthenticatedRequest, res: Respon
         },
         vendorProfile: vendor || null,
         metrics: {
-          activeRfqs: 4, // Week 2 Preview: RFQ quote invitations for this vendor
+          activeRfqs,
           pendingApprovals: pendingOrders, // Vendor's orders awaiting confirmation / review
           monthlyPoSpend: formattedSpend, // Total value of orders awarded to this vendor
           monthlyPoSpendRaw: totalSpend,
-          overdueInvoices: 0, // Week 3 Invoices module
+          overdueInvoices,
           totalOrdersCount,
           verificationStatus: vendor?.status || 'PENDING',
         },
@@ -84,6 +105,15 @@ export const getDashboardSummary = async (req: AuthenticatedRequest, res: Respon
       notice = `Approvals & Budget Control: ${pendingApprovals} purchase order(s) awaiting managerial review. ${formattedSpend} total approved commitments.`;
     }
 
+    // Real database-backed operational metrics for Admin / Officer / Approver
+    const activeRfqs = await prisma.rfq.count({ where: { status: 'OPEN' } });
+    const overdueInvoices = await prisma.invoice.count({
+      where: {
+        status: 'PENDING_PAYMENT',
+        dueDate: { lt: new Date() },
+      },
+    });
+
     const summaryData = {
       user: {
         firstName: user.firstName,
@@ -91,11 +121,11 @@ export const getDashboardSummary = async (req: AuthenticatedRequest, res: Respon
         role: user.role,
       },
       metrics: {
-        activeRfqs: 12, // Week 2 Preview module (quote aggregation workflow unlocks in Week 2)
+        activeRfqs,
         pendingApprovals, // Live count of purchase orders in PENDING status from DB
         monthlyPoSpend: formattedSpend, // Live aggregated sum of APPROVED purchase orders from DB
         monthlyPoSpendRaw: monthlySpend,
-        overdueInvoices: 3, // Week 3 Preview module (invoice aging workflow unlocks in Week 3)
+        overdueInvoices,
         totalUsers, // Live count of active users in database
         activeSuppliers: counts.active,
         pendingVerifications: counts.pending,

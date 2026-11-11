@@ -405,7 +405,7 @@ describe.skipIf(!isSafeDb)('VendorBridge Backend API & Security Suite [MUTATING 
       expect(res.body.summary.metrics.activeSuppliers).toBeDefined();
       expect(res.body.summary.metrics.pendingVerifications).toBeDefined();
       expect(res.body.summary.notice).toContain('Procurement Operations');
-      expect(res.body.summary.metrics.activeRfqs).toBe(12);
+      expect(typeof res.body.summary.metrics.activeRfqs).toBe('number');
     });
 
     it('should return Manager / Approver dashboard summary with approval and spend metrics', async () => {

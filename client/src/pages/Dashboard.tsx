@@ -303,15 +303,15 @@ export const Dashboard: React.FC = () => {
           <div className="mt-3">
             <span className="text-3xl font-extrabold text-[#F8FAFC] tracking-tight">
               {isAdmin && (data?.metrics?.pendingApprovals ?? 0)}
-              {isOfficer && (data?.metrics?.activeRfqs ?? 12)}
-              {isApprover && (data?.metrics?.overdueInvoices ?? 3)}
-              {isVendor && (data?.metrics?.activeRfqs ?? 4)}
+              {isOfficer && (data?.metrics?.activeRfqs ?? 0)}
+              {isApprover && (data?.metrics?.overdueInvoices ?? 0)}
+              {isVendor && (data?.metrics?.activeRfqs ?? 0)}
             </span>
             <p className="text-[11px] font-medium mt-1 text-slate-300">
               {isAdmin && `${data?.metrics?.pendingApprovals ?? 0} awaiting managerial sign-off`}
-              {isOfficer && 'Week 2 Preview • 4 awaiting quotes'}
-              {isApprover && 'Week 3 Preview • Action required'}
-              {isVendor && 'Week 2 Preview • Bidding portal'}
+              {isOfficer && `${data?.metrics?.activeRfqs ?? 0} active RFQs in procurement cycle`}
+              {isApprover && `${data?.metrics?.overdueInvoices ?? 0} overdue invoices requiring action`}
+              {isVendor && `${data?.metrics?.activeRfqs ?? 0} open bidding opportunities`}
             </p>
           </div>
         </div>

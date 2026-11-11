@@ -161,15 +161,13 @@ const ALL_NAV_ITEMS: NavItem[] = [
     name: 'Reports',
     path: '/reports',
     icon: BarChart3,
-    badge: 'W4',
-    allowedRoles: ['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER'],
+    allowedRoles: ['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER', 'VENDOR'],
   },
   {
     name: 'Activity',
     path: '/activity',
     icon: Activity,
-    badge: 'W4',
-    allowedRoles: ['ADMIN'],
+    allowedRoles: ['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER', 'VENDOR'],
   },
 ];
 

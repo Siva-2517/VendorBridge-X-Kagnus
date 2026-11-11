@@ -485,3 +485,96 @@ export interface Invoice {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface ActivityLogItem {
+  id: string;
+  userId: string | null;
+  actorName: string;
+  actorRole: Role | null;
+  action: string;
+  category: string;
+  entityType: string;
+  entityId: string | null;
+  entityIdentifier: string | null;
+  details: string | null;
+  metadata: Record<string, any> | null;
+  createdAt: string;
+}
+
+export interface ActivityPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface ActivityListResponse {
+  success: boolean;
+  activities: ActivityLogItem[];
+  pagination: ActivityPagination;
+}
+
+// --- Week 4 Reports & Analytics Types ---
+
+export interface ReportKpiMetrics {
+  totalSpend: number;
+  formattedTotalSpend: string;
+  currency: string;
+  activeVendors: number;
+  poFulfillmentRate: number;
+  fulfilledPOsCount: number;
+  totalEligiblePOsCount: number;
+  pendingInvoices: number;
+  overdueInvoices: number;
+}
+
+export interface MonthlySpendTrendItem {
+  month: string;
+  monthLabel: string;
+  spend: number;
+  poAmount: number;
+  invoiceCount: number;
+}
+
+export interface CategorySpendItem {
+  category: string;
+  amount: number;
+  percentage: number;
+}
+
+export interface TopVendorSpendItem {
+  vendorId: string;
+  vendorName: string;
+  paidAmount: number;
+  invoiceCount: number;
+  poCount: number;
+}
+
+export interface StatusDistributionItem {
+  status: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface VendorPerformanceMetrics {
+  rfqResponseRate: number;
+  quotationAwardRate: number;
+  invoiceSettlementRate: number;
+  avgDeliveryLeadDays: number;
+  limitationNotice: string;
+}
+
+export interface ReportsOverviewResponse {
+  period: string;
+  startDate: string;
+  endDate: string;
+  currency: string;
+  kpis: ReportKpiMetrics;
+  monthlySpendTrend: MonthlySpendTrendItem[];
+  spendByCategory: CategorySpendItem[];
+  topVendors: TopVendorSpendItem[];
+  poStatusDistribution: StatusDistributionItem[];
+  invoiceStatusDistribution: StatusDistributionItem[];
+  vendorPerformance: VendorPerformanceMetrics;
+}

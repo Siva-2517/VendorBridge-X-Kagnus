@@ -26,6 +26,13 @@ export enum InvoiceStatus {
   CANCELLED = 'CANCELLED'
 }
 
+export enum NotificationType {
+  RFQ_UPDATE = 'RFQ_UPDATE',
+  APPROVAL_ALERT = 'APPROVAL_ALERT',
+  INVOICE_UPDATE = 'INVOICE_UPDATE',
+  SYSTEM_NOTICE = 'SYSTEM_NOTICE'
+}
+
 export type TaxBreakdownType = 'CGST_SGST' | 'IGST' | 'STANDARD';
 
 export interface TaxBreakdown {
@@ -241,9 +248,30 @@ export interface PurchaseOrder {
 export interface AuditLog {
   id: string;
   userId?: string | null;
-  userEmail?: string | null;
+  actorName?: string | null;
+  actorRole?: Role | null;
   action: string;
+  category?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  entityIdentifier?: string | null;
   details?: string | null;
+  metadata?: Record<string, any> | null;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  type: NotificationType;
+  entityType?: string | null;
+  entityId?: string | null;
+  entityIdentifier?: string | null;
+  linkUrl?: string | null;
+  isRead: boolean;
+  dedupeKey?: string | null;
   createdAt: string;
 }
 
@@ -514,4 +542,69 @@ export interface QuotationComparison {
   totalQuotationsCount: number;
   lowestPrice: number | null;
   lowestBidderVendorName: string | null;
+}
+
+// --- Week 4 Reports & Analytics Types ---
+
+export interface ReportKpiMetrics {
+  totalSpend: number;
+  formattedTotalSpend: string;
+  currency: string;
+  activeVendors: number;
+  poFulfillmentRate: number;
+  fulfilledPOsCount: number;
+  totalEligiblePOsCount: number;
+  pendingInvoices: number;
+  overdueInvoices: number;
+}
+
+export interface MonthlySpendTrendItem {
+  month: string;
+  monthLabel: string;
+  spend: number;
+  poAmount: number;
+  invoiceCount: number;
+}
+
+export interface CategorySpendItem {
+  category: string;
+  amount: number;
+  percentage: number;
+}
+
+export interface TopVendorSpendItem {
+  vendorId: string;
+  vendorName: string;
+  paidAmount: number;
+  invoiceCount: number;
+  poCount: number;
+}
+
+export interface StatusDistributionItem {
+  status: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface VendorPerformanceMetrics {
+  rfqResponseRate: number;
+  quotationAwardRate: number;
+  invoiceSettlementRate: number;
+  avgDeliveryLeadDays: number;
+  limitationNotice: string;
+}
+
+export interface ReportsOverviewResponse {
+  period: string;
+  startDate: string;
+  endDate: string;
+  currency: string;
+  kpis: ReportKpiMetrics;
+  monthlySpendTrend: MonthlySpendTrendItem[];
+  spendByCategory: CategorySpendItem[];
+  topVendors: TopVendorSpendItem[];
+  poStatusDistribution: StatusDistributionItem[];
+  invoiceStatusDistribution: StatusDistributionItem[];
+  vendorPerformance: VendorPerformanceMetrics;
 }

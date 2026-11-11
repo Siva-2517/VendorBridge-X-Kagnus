@@ -1,7 +1,7 @@
 # VendorBridge — Procurement & Vendor Management ERP
-### Complete Platform: Week 1, Week 2 & Week 3 (Approvals, POs, Invoices & 3-Way Matching)
+### Complete Platform: Weeks 1–4 (Approvals, POs, Invoices, Notifications, Activity Logs & Analytics)
 
-VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise Resource Planning (ERP) platform designed to streamline supplier onboarding, verification, request for quotations (RFQs), quotation comparison, managerial approvals, purchase orders, 3-way matching, PDF generation, and invoice lifecycle management.
+VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise Resource Planning (ERP) platform designed to streamline supplier onboarding, verification, request for quotations (RFQs), quotation comparison, managerial approvals, purchase orders, 3-way matching, PDF generation, invoice lifecycle management, real-time notifications, immutable audit timelines, and financial reports & analytics.
 
 > [!NOTE]
 > ### 🌐 Live Production Deployment
@@ -66,7 +66,7 @@ VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise R
 - **Invoice Management & Authoritative 3-Way Matching**:
   - Invoices generated against eligible purchase orders (`APPROVED` or `ISSUED`).
   - Sequence generation: `INV-YYYY-XXXX` atomic sequence numbering.
-  - 1:1 PO-to-Invoice enforcement with concurrent request serialization (returns `409 Conflict` safely).
+  - 1:1 PO-to-Invoice enforcement via database unique constraint (`purchaseOrderId`) with concurrent request serialization (`409 Conflict` safety).
   - **3-Way Matching Engine**: Reconciles Quotation $\leftrightarrow$ Purchase Order $\leftrightarrow$ Invoice across:
     1. Line items, descriptions, quantities, UOM, and unit prices.
     2. Subtotals, tax rates, intra-state/inter-state tax breakdown, and grand totals.
@@ -91,14 +91,57 @@ VendorBridge is an enterprise-grade Procurement & Vendor Management Enterprise R
   - Enforces `403 Forbidden` for Procurement Officers, Managers, and Vendors.
   - Records timestamp (`paidAt`), custom payment notes (e.g., bank UTR number), and audit trail entry.
 
+### Week 4: Notifications, Structured Activity Audit Trail & Reports Analytics
+- **Database-Backed Real-Time Notifications**:
+  - Atomic notification dispatch within Prisma transactions for all business lifecycle events:
+    - RFQ Creation & Updates (invites assigned suppliers)
+    - Quotation Submissions (alerts procurement officers)
+    - Selection for Approval (alerts manager approvers)
+    - Approval Decisions (notifies procurement lead and vendor)
+    - Purchase Order Generation (notifies supplier)
+    - Invoice Creation (notifies billing team)
+    - Invoice Payment (notifies supplier and officer)
+  - Model `Notification` with types: `RFQ_UPDATE`, `APPROVAL_ALERT`, `INVOICE_UPDATE`, `SYSTEM_NOTICE`.
+  - Built-in deduplication key (`dedupeKey`) prevents duplicate notification spam upon retries.
+  - Notification management API: `GET /api/notifications` (paginated, unread filter), `GET /api/notifications/unread-count`, `PATCH /api/notifications/:id/read`, `PATCH /api/notifications/read-all`.
+  - UI Header Dropdown: Real-time badge counter, unread indicators, mark-as-read, and deep-linking to relevant resources.
+- **Structured & Immutable Activity / Audit Trail**:
+  - Model `AuditLog` enriched with `category` (`RFQ`, `APPROVAL`, `PO`, `INVOICE`, `VENDOR`, `AUTH`, `SYSTEM`), `entityType`, `entityId`, `entityIdentifier`, and sanitized `metadata`.
+  - **Database-Level Trigger Protection**: PostgreSQL trigger `trg_prevent_audit_log_mutation` strictly blocks `UPDATE` or `DELETE` queries (`ERROR: AuditLog records are immutable`).
+  - Strict RBAC: Read-only API (`GET /api/activity`) with role-based filtering:
+    - `ADMIN` & `PROCUREMENT_OFFICER`: Full operational visibility across all categories.
+    - `MANAGER_APPROVER`: Approvals, purchase orders, invoices, and spend events.
+    - `VENDOR`: Tenant-isolated exclusively to their own user events and assigned RFQs, bids, POs, and invoices.
+  - Zero mutation routes: `POST`, `PATCH`, `PUT`, `DELETE` on `/api/activity` return `404 Not Found`.
+  - UI Activity Page (`/activity`): Category filters, search input, date range filters, and paginated timeline cards.
+- **Reports & Analytics Dashboard (`/reports`)**:
+  - Live PostgreSQL data aggregation across 5 key procurement KPIs:
+    1. **Total Spend**: Total value of all `PAID` invoices within the period.
+    2. **Total PO Commitment**: Total value of all approved/issued purchase orders.
+    3. **Invoices Paid Count**: Total count of settled invoices.
+    4. **Hardened PO Fulfillment Rate**: Percentage of POs where a matching invoice is `PAID` and covers at least 99% of PO commitment value (safeguards against partial/unpaid invoices).
+    5. **Active Suppliers**: Clearly labeled as a *current registered snapshot* rather than an artificial period-bound count.
+  - Zero-denominator division protection across all rate calculations.
+  - SVG Data Visualizations:
+    - Monthly Spend & PO Trajectory trendline
+    - Category Spend Breakdown (Constructions, IT Hardware, Services, etc.)
+    - Top Suppliers Leaderboard with fulfillment tracking
+    - PO & Invoice Status Distributions
+    - Supplier Performance Scorecard
+  - Currency standard: Standardized to Indian Rupee (INR / ₹) with `en-IN` number formatting.
+- **Financial CSV Export with Formula Injection Mitigation (`/api/reports/export`)**:
+  - Server-side streaming CSV download based on filtered PostgreSQL invoice records.
+  - **Formula Injection Sanitization**: The `sanitizeCsvCell` function prepends a single quote `'` to any cell beginning with dangerous trigger characters (`=`, `+`, `-`, `@`, `\t`, `\r`) to neutralize Excel/Calc formula execution vulnerabilities.
+  - Role-aware vendor data scoping: Vendor users can only export invoices for their own company.
+
 ---
 
 ## 2. Technology Stack
 
 - **Frontend**: React 18, TypeScript, Tailwind CSS (Slate-Navy `#111827`/`#0B1220` & Muted-Teal `#36C9A5`), Lucide React, React Router v6, Vite.
 - **Backend**: Node.js, Express, TypeScript, Prisma ORM, Zod, PDFKit, Nodemailer, bcryptjs, jsonwebtoken, cookie-parser, cors, helmet, express-rate-limit.
-- **Database & ORM**: Cloud PostgreSQL (Neon Serverless) via Prisma ORM (`Decimal(12, 2)` financial precision, `Bytes` file storage, `SystemSequence` atomic counters).
-- **Testing**: Vitest & Supertest with 138 automated integration tests across all modules.
+- **Database & ORM**: Cloud PostgreSQL (Neon Serverless) via Prisma ORM (`Decimal(12, 2)` financial precision, `Bytes` file storage, `SystemSequence` atomic counters, database-level immutability triggers).
+- **Testing**: Vitest & Supertest with **208 automated integration tests** across 15 test suites.
 
 ---
 
@@ -109,29 +152,42 @@ d:\Kagnus/
 ├── package.json              # Monorepo orchestration scripts
 ├── .env.example              # Environment variables template
 ├── README.md                 # Complete system documentation
+├── docs/
+│   └── screenshots/          # 13 authoritative UI screenshots
 ├── server/                   # Backend Express & Prisma API
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── prisma/
-│   │   ├── schema.prisma     # PostgreSQL Prisma models (Decimal, Restrictive FKs, Sequences)
+│   │   ├── schema.prisma     # PostgreSQL Prisma models (Decimal, Restrictive FKs, Sequences, Notifications, AuditLog)
 │   │   ├── migrations/       # Version-controlled migration history
 │   │   │   ├── 0_init/
 │   │   │   ├── 20261027120000_week2_rfq_quotations/
-│   │   │   └── 20261028120000_week3_approvals_po_invoices/
-│   │   └── seed.ts           # Migration and Excalidraw baseline seed data
+│   │   │   ├── 20261028120000_week3_approvals_po_invoices/
+│   │   │   └── 20261106120000_week4_notifications_audit_analytics/
+│   │   └── seed.ts           # Migration and baseline seed data
 │   └── src/
 │       ├── types/            # TypeScript domain interfaces & enums
-│       ├── utils/            # Tax calculation, 3-way matching, PDF generator, email service
+│       ├── utils/            # Tax calculation, 3-way matching, PDF generator, email service, RFQ validation
 │       ├── middleware/       # JWT auth, upload (Multer 5MB), RBAC guards
-│       ├── controllers/      # Auth, Vendor, RFQ, Quotation, Approval, PO, and Invoice controllers
-│       ├── routes/           # REST routers (/api/auth, /api/vendors, /api/rfqs, /api/approvals, /api/purchase-orders, /api/invoices)
-│       ├── tests/            # Vitest integration test suites (138 tests)
+│       ├── controllers/      # Auth, Vendor, RFQ, Quotation, Approval, PO, Invoice, Activity, Notification, Reports
+│       ├── routes/           # REST routers (/api/auth, /api/vendors, /api/rfqs, /api/approvals, /api/purchase-orders, /api/invoices, /api/activity, /api/notifications, /api/reports)
+│       ├── services/         # AuditService, NotificationService, ReportsService, TaxService
+│       ├── tests/            # Vitest integration test suites (208 tests across 15 suites)
 │       │   ├── auth_vendor.test.ts          # Week 1 tests (28 passed)
 │       │   ├── rfq_quotation.test.ts        # Week 2 tests (14 passed)
 │       │   ├── approval_workflow.test.ts    # Week 3 Approval tests (15 passed)
 │       │   ├── po_generation.test.ts        # Week 3 PO tests (11 passed)
 │       │   ├── invoice_matching.test.ts     # Week 3 Invoice & Matching tests (30 passed)
-│       │   └── e2e_audit_workflow.test.ts   # Week 3 12-Step E2E Suite (12 passed)
+│       │   ├── e2e_audit_workflow.test.ts   # Week 3 E2E Suite (12 passed)
+│       │   ├── notifications_audit.test.ts  # Week 4 Notifications & Audit tests (15 passed)
+│       │   ├── activity_rbac.test.ts        # Week 4 Activity RBAC tests (15 passed)
+│       │   ├── reports_analytics.test.ts    # Week 4 Reports & Analytics tests (23 passed)
+│       │   ├── week4_e2e_integration.test.ts # Week 4 Final E2E Suite (17 passed)
+│       │   ├── sequence_live_pg.test.ts     # PostgreSQL sequence tests (2 passed)
+│       │   ├── sequence_isolated.test.ts    # Sequence isolated tests (7 passed)
+│       │   ├── attachment_security.test.ts  # Attachment tests (7 passed)
+│       │   ├── test_db_guard.test.ts        # Guard tests (7 passed)
+│       │   └── comparison_adapter.test.ts   # Adapter tests (5 passed)
 │       ├── app.ts            # Express application setup
 │       └── index.ts          # Server entry point
 └── client/                   # Frontend React & Tailwind application
@@ -140,14 +196,14 @@ d:\Kagnus/
     ├── tailwind.config.js    # Custom ERP dark palette
     └── src/
         ├── types/            # Frontend interfaces
-        ├── services/         # Typed API clients (rfqApi, approvalApi, poApi, invoiceApi)
+        ├── services/         # Typed API clients (rfqApi, approvalApi, poApi, invoiceApi, activityApi, reportsApi)
         ├── context/          # AuthContext with persistent sessions
         ├── components/
         │   ├── layout/       # AppLayout, Navbar, Sidebar
         │   ├── common/       # Badge, Status indicators
         │   ├── rfq/          # CreateRfqModal (Screen 5 BOM)
         │   └── quotations/   # SubmitQuotationModal (Screen 6 Bidding Grid)
-        └── pages/            # Dashboard, Vendors, Rfqs, Approvals, PurchaseOrders, Invoices
+        └── pages/            # Dashboard, Vendors, Rfqs, Approvals, PurchaseOrders, Invoices, Activity, Reports
 ```
 
 ---
@@ -169,6 +225,10 @@ d:\Kagnus/
 | **Download Invoice PDF** | `/api/invoices/:id/pdf` | ✅ | ✅ | ✅ | ✅ (Own Invoices Only) |
 | **Transmit Invoice Email** | `/api/invoices/:id/email` | ✅ | ✅ | ❌ | ✅ (Trusted Company Address) |
 | **Mark Invoice Paid** | `/api/invoices/:id/mark-paid` | ✅ (Authorized) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) | ❌ (Forbidden - 403) |
+| **Activity Timeline** | `/activity` | ✅ Complete Timeline | ✅ Complete Timeline | ✅ Spend & Approval Events | ✅ (Isolated Own Events) |
+| **Reports & Analytics** | `/reports` | ✅ Full Analytics | ✅ Full Analytics | ✅ Full Analytics | ✅ (Isolated Own Spend) |
+| **CSV Spend Export** | `/api/reports/export` | ✅ Full Financials | ✅ Full Financials | ✅ Full Financials | ✅ (Isolated Own Invoices) |
+| **Notifications Dropdown**| Header Nav | ✅ Active Alerts | ✅ Active Alerts | ✅ Active Alerts | ✅ (Assigned Alerts Only) |
 
 ---
 
@@ -202,7 +262,7 @@ cp server/.env.example server/.env
 | `NODE_ENV` | Runtime environment (`development`, `production`, `test`) | `development` |
 | `CLIENT_ORIGIN` | Allowed CORS origin(s) | `http://localhost:3000` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/db?schema=public` |
-| `JWT_SECRET` | Secret key for JWT session signing (min 32 chars) | `vendorbridge_super_secure_jwt_secret_key_at_least_32_chars` |
+| `JWT_SECRET` | Secret key for JWT session signing (min 32 chars) | `your_secure_random_jwt_secret_here_32_chars` |
 | `JWT_EXPIRES_IN` | Token validity period | `7d` |
 | `ADMIN_INVITE_CODE` | Code required to register privileged roles | `ADMIN_SECURE_SETUP_2025` |
 
@@ -247,7 +307,7 @@ npm run dev
 
 ## 7. Testing & Verification
 
-Run the comprehensive automated test suite covering all Week 1, Week 2, and Week 3 workflows:
+Run the comprehensive automated test suite covering all Week 1, Week 2, Week 3, and Week 4 workflows:
 ```bash
 cd server
 npm test
@@ -259,22 +319,26 @@ cd server
 $env:TEST_DATABASE_URL="postgresql://user:pass@127.0.0.1:5432/test_db?schema=public"; npx vitest run --no-file-parallelism
 ```
 
-### Test Suite Execution Output (138 Tests Passing)
+### Complete Test Suite Execution Output (208 Tests Passing)
 ```
  ✓ src/tests/invoice_matching.test.ts (30 tests)
  ✓ src/tests/auth_vendor.test.ts (28 tests)
+ ✓ src/tests/reports_analytics.test.ts (23 tests)
+ ✓ src/tests/week4_e2e_integration.test.ts (17 tests)
  ✓ src/tests/approval_workflow.test.ts (15 tests)
+ ✓ src/tests/notifications_audit.test.ts (15 tests)
+ ✓ src/tests/activity_rbac.test.ts (15 tests)
  ✓ src/tests/rfq_quotation.test.ts (14 tests)
  ✓ src/tests/e2e_audit_workflow.test.ts (12 tests)
  ✓ src/tests/po_generation.test.ts (11 tests)
- ✓ src/tests/attachment_security.test.ts (7 tests)
  ✓ src/tests/sequence_isolated.test.ts (7 tests)
+ ✓ src/tests/attachment_security.test.ts (7 tests)
  ✓ src/tests/test_db_guard.test.ts (7 tests)
  ✓ src/tests/comparison_adapter.test.ts (5 tests)
  ✓ src/tests/sequence_live_pg.test.ts (2 tests)
 
- Test Files  11 passed (11)
-      Tests  138 passed (138)
+ Test Files  15 passed (15)
+      Tests  208 passed (208)
 ```
 
 ### Production Build Verification
@@ -297,12 +361,12 @@ Both builds compile with **exit code 0** and zero TypeScript errors.
 
 All pre-seeded local development accounts share the default development password: `VendorBridge@2025`
 
-| Role | Email | Status in Seed Data | Capabilities in Week 3 |
+| Role | Email | Status in Seed Data | Capabilities Across Weeks 1–4 |
 | :--- | :--- | :---: | :--- |
-| **System Admin** | `admin@vendorbridge.com` | Pre-Seeded | Full system access, vendor management, quotation approvals, mark invoices as PAID |
-| **Procurement Officer** | `officer@vendorbridge.com` | Pre-Seeded | Create RFQs, compare bids, select quotations, generate POs, generate Invoices |
-| **Manager / Approver** | `manager@vendorbridge.com` | Pre-Seeded | Review approval queue (`/approvals`), APPROVE or REJECT quotation commercial terms |
-| **Vendor Partner** | `vendor@infrasupplies.com` | Pre-Seeded | View assigned RFQs, submit quotations, view awarded POs, download own invoice PDFs (Infra Supplies) |
+| **System Admin** | `admin@vendorbridge.com` | Pre-Seeded | Full system access, vendor management, quotation approvals, mark invoices as PAID, view all audit logs and system analytics |
+| **Procurement Officer** | `officer@vendorbridge.com` | Pre-Seeded | Create RFQs, compare bids, select quotations, generate POs, generate Invoices, view operational activity |
+| **Manager / Approver** | `manager@vendorbridge.com` | Pre-Seeded | Review approval queue (`/approvals`), APPROVE or REJECT quotation commercial terms, view financial reports |
+| **Vendor Partner** | `vendor@infrasupplies.com` | Pre-Seeded | View assigned RFQs, submit quotations, view awarded POs, download own invoice PDFs, view own activity timeline |
 | **Self-Registered Vendor** | Register via `/register` | Dynamic | Any new user registered without an invite code automatically defaults to `VENDOR` role for testing multi-vendor isolation |
 
 ---
@@ -351,9 +415,60 @@ All pre-seeded local development accounts share the default development password
 - `POST   /api/invoices/:id/email` — Transmit invoice PDF via SMTP (with vendor recipient whitelist)
 - `POST   /api/invoices/:id/mark-paid` — Mark invoice as paid (Admin only, records audit trail)
 
+### Activity & Audit Logs (`/api/activity`)
+- `GET /api/activity` — Query structured audit logs (`page`, `limit`, `category`, `action`, `search`, `startDate`, `endDate`). Role-gated and vendor-isolated.
+- *Mutation methods (`POST`, `PATCH`, `DELETE`) return `404 Not Found` (immutable).*
+
+### Notifications (`/api/notifications`)
+- `GET   /api/notifications` — List paginated notifications for current user (`unreadOnly`, `type`)
+- `GET   /api/notifications/unread-count` — Count unread notifications
+- `PATCH /api/notifications/:id/read` — Mark a single notification as read
+- `PATCH /api/notifications/read-all` — Mark all notifications as read for current user
+
+### Reports & Analytics (`/api/reports`)
+- `GET /api/reports/overview` — Fetch KPI summaries, monthly spend trend, category breakdown, and supplier scorecard (`period=30d|90d|6m|12m|all`)
+- `GET /api/reports/export` — Stream financial report as RFC 4180 CSV with formula injection mitigation
+
 ---
 
-## 10. Manual Screenshot & UI Verification Evidence
+## 10. Deployment Checklist & Rollback Procedures
+
+### Pre-Deployment Checklist
+1. **Database Safety Check**:
+   - Ensure target database is a dedicated staging or production PostgreSQL instance (Neon).
+   - Verify connection string `DATABASE_URL` uses SSL (`sslmode=require`).
+   - Run `npx prisma validate` to confirm schema integrity.
+2. **Environment Variable Configuration**:
+   - Verify all required variables are set (`DATABASE_URL`, `JWT_SECRET`, `CLIENT_ORIGIN`, `NODE_ENV=production`).
+   - Confirm `JWT_SECRET` is at least 32 characters long.
+   - If SMTP is enabled, verify `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASS`.
+3. **Build & Test Verification**:
+   - Run full regression test suite: `cd server && npm test` (all 15 test files must pass).
+   - Verify server compilation: `cd server && npm run build`.
+   - Verify client compilation: `cd client && npm run build`.
+4. **Migration Sequence Execution**:
+   - Execute migrations via: `npx prisma migrate deploy`.
+   - Verify the database trigger `trg_prevent_audit_log_mutation` is installed.
+
+### Post-Deployment Health Check
+1. Probe API health endpoint: `GET /api/health` $\rightarrow$ Expect `{ status: "ok" }`.
+2. Probe login endpoint with admin credentials.
+3. Access `/reports` and confirm live KPI computation without server-side errors.
+4. Download CSV export from `/api/reports/export` and verify headers and formula sanitization.
+
+### Rollback Procedure
+If a critical production regression is encountered:
+1. **Frontend Rollback**:
+   - In Vercel, navigate to Deployments and redeploy the previous successful release.
+2. **Backend Rollback**:
+   - In Render, trigger a manual deploy pointing to the previous release commit (`965ac5a`).
+3. **Database Migration Safety**:
+   - The Week 4 migration is strictly **additive** (`Notification` model, optional columns on `AuditLog`). No existing tables, columns, or data were dropped.
+   - Rolling back backend code to Week 3 will operate safely on the additive schema without database rollbacks.
+
+---
+
+## 11. Manual Screenshot & UI Verification Evidence
 
 The genuine application screenshots captured from the local development environment are stored under `docs/screenshots/` and referenced below:
 
@@ -435,3 +550,39 @@ The genuine application screenshots captured from the local development environm
 - **Key Elements Shown:** Invoice detail displaying updated `PAID` status badge in emerald green, `Paid on:` timestamp, line items, and the authoritative 3-Way Match Verification Card (`100% RECONCILED`).
 
 ![09 - Invoice Paid Confirmation](docs/screenshots/09_invoice_paid_confirmation.png)
+
+---
+
+### 10. Real-Time Activity & Audit Logs Timeline
+- **Route:** `/activity`
+- **Recommended User:** `admin@vendorbridge.com` or `officer@vendorbridge.com`
+- **Key Elements Shown:** Chronological activity stream with category pills (RFQ, Approval, PO, Invoice, Auth, Vendor), actor roles, formatted timestamps, and entity identifier badges.
+
+![10 - Activity Timeline](docs/screenshots/10_activity_timeline.png)
+
+---
+
+### 11. Activity Filters & Dynamic Search
+- **Route:** `/activity`
+- **Recommended User:** `admin@vendorbridge.com`
+- **Key Elements Shown:** Filtering by category tab, search input with instant debounced filtering, and immutable database record details.
+
+![11 - Activity Filters & Search](docs/screenshots/11_activity_filters_search.png)
+
+---
+
+### 12. Reports & Analytics Overview
+- **Route:** `/reports`
+- **Recommended User:** `admin@vendorbridge.com` or `manager@vendorbridge.com`
+- **Key Elements Shown:** Live KPI metric cards (Total Spend in INR ₹, PO Commitment, Invoices Paid, Hardened PO Fulfillment Rate, Active Suppliers snapshot) and period selector (30d, 90d, 6m, 12m, All).
+
+![12 - Reports Overview](docs/screenshots/12_reports_overview.png)
+
+---
+
+### 13. Reports Charts, Top Suppliers Leaderboard & CSV Export
+- **Route:** `/reports` → Scroll to visual analytics
+- **Recommended User:** `admin@vendorbridge.com` or `officer@vendorbridge.com`
+- **Key Elements Shown:** Monthly Spend & PO Trajectory SVG trendline, Category Spend Distribution, Top Suppliers Leaderboard, Status breakdown pies, and the `Export CSV` action button.
+
+![13 - Reports Charts & Export](docs/screenshots/13_reports_charts_export.png)

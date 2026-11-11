@@ -71,6 +71,15 @@ enum InvoiceStatus {
   CANCELLED
 }
 
+// --- Week 4 Enums ---
+
+enum NotificationType {
+  RFQ_UPDATE
+  APPROVAL_ALERT
+  INVOICE_UPDATE
+  SYSTEM_NOTICE
+}
+
 // --- Models ---
 
 model SystemSequence {
@@ -104,6 +113,7 @@ model User {
   purchaseOrdersAuth PurchaseOrder[]      @relation("POCreator")
   invoicesCreated    Invoice[]            @relation("InvoiceCreator")
   auditLogs          AuditLog[]
+  notifications      Notification[]       @relation("UserNotifications")
 }
 
 model PasswordResetToken {
@@ -407,10 +417,43 @@ model RfqAttachment {
 }
 
 model AuditLog {
-  id        String   @id @default(uuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action    String
-  details   String?
-  createdAt DateTime @default(now())
+  id               String   @id @default(uuid())
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actorName        String?
+  actorRole        Role?
+  action           String
+  category         String?  // RFQ, APPROVAL, INVOICE, VENDOR, PO, AUTH, SYSTEM
+  entityType       String?  // RFQ, QUOTATION, APPROVAL, PURCHASE_ORDER, INVOICE, VENDOR, USER
+  entityId         String?
+  entityIdentifier String?  // e.g. RFQ-2026-0001, PO-2026-0001, INV-2026-0001
+  details          String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([category])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Notification {
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  description      String
+  type             NotificationType @default(SYSTEM_NOTICE)
+  entityType       String?
+  entityId         String?
+  entityIdentifier String?
+  linkUrl          String?
+  isRead           Boolean          @default(false)
+  dedupeKey        String?          @unique
+  createdAt        DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
 }

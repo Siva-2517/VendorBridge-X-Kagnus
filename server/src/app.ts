@@ -11,6 +11,9 @@ import quotationRoutes from './routes/quotationRoutes';
 import approvalRoutes from './routes/approvalRoutes';
 import poRoutes from './routes/poRoutes';
 import invoiceRoutes from './routes/invoiceRoutes';
+import notificationRoutes from './routes/notificationRoutes';
+import activityRoutes from './routes/activityRoutes';
+import reportsRoutes from './routes/reportsRoutes';
 
 dotenv.config();
 
@@ -69,6 +72,9 @@ app.use('/api/quotations', quotationRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/purchase-orders', poRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

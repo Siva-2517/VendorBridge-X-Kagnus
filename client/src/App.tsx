@@ -14,7 +14,8 @@ import { Approvals } from './pages/Approvals';
 import { PurchaseOrders } from './pages/PurchaseOrders';
 import { Invoices } from './pages/Invoices';
 import { Profile } from './pages/Profile';
-import { FutureModulePlaceholder } from './components/common/FutureModulePlaceholder';
+import { ActivityPage } from './pages/Activity';
+import { Reports } from './pages/Reports';
 import { AccessDenied } from './components/common/AccessDenied';
 import { Role } from './types';
 import { Loader2 } from 'lucide-react';
@@ -111,20 +112,10 @@ export const App: React.FC = () => {
               path="reports"
               element={
                 <RoleRouteGuard
-                  allowedRoles={['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER']}
+                  allowedRoles={['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER', 'VENDOR']}
                   resourceName="Procurement Reports & Analytics"
                 >
-                  <FutureModulePlaceholder
-                    moduleName="Reports & Procurement Analytics"
-                    scheduledWeek="Week 4"
-                    description="Executive dashboard analytics, department spending breakdown, supplier performance scoring, and SLA tracking."
-                    features={[
-                      'Spend analysis by category and department',
-                      'Supplier performance scorecards (OTIF)',
-                      'Cost savings and variance reports',
-                      'CSV & PDF data export pipelines',
-                    ]}
-                  />
+                  <Reports />
                 </RoleRouteGuard>
               }
             />
@@ -133,20 +124,10 @@ export const App: React.FC = () => {
               path="activity"
               element={
                 <RoleRouteGuard
-                  allowedRoles={['ADMIN']}
+                  allowedRoles={['ADMIN', 'PROCUREMENT_OFFICER', 'MANAGER_APPROVER', 'VENDOR']}
                   resourceName="Audit Logs & Activity Trail"
                 >
-                  <FutureModulePlaceholder
-                    moduleName="Audit Logs & Activity Trail"
-                    scheduledWeek="Week 4"
-                    description="Immutable, tamper-evident procurement event logging recording all state changes, authorizations, and deletions."
-                    features={[
-                      'Immutable system-wide event logging',
-                      'User and role action attribution',
-                      'Timestamped state change diffs',
-                      'Compliance audit export archive',
-                    ]}
-                  />
+                  <ActivityPage />
                 </RoleRouteGuard>
               }
             />

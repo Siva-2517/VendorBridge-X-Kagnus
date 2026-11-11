@@ -27,9 +27,12 @@ import {
   InvoiceStatus,
   TaxBreakdown,
   ThreeWayMatchResult,
+  NotificationType,
 } from '../types';
 import { calculateTaxBreakdown } from '../utils/taxService';
 import { performThreeWayMatch } from '../utils/matchingService';
+import { recordAudit } from '../services/auditService';
+import { createNotification, getApproverUsers, getVendorUser } from '../services/notificationService';
 
 class DatabaseStore {
   // --- Users API ---
@@ -442,19 +445,19 @@ class DatabaseStore {
   }
 
   // --- Audit Log ---
-  public async logAudit(userId: string | null, userEmail: string | null, action: string, details?: string): Promise<void> {
+  public async logAudit(
+    userId: string | null,
+    userEmail: string | null,
+    action: string,
+    details?: string,
+    metadata?: Record<string, any>
+  ): Promise<void> {
     try {
-      let validUserId = userId;
-      if (validUserId) {
-        const userExists = await prisma.user.findUnique({ where: { id: validUserId } });
-        if (!userExists) validUserId = null;
-      }
-      await prisma.auditLog.create({
-        data: {
-          userId: validUserId,
-          action,
-          details: details ? `${userEmail ? `[${userEmail}] ` : ''}${details}` : userEmail || null,
-        },
+      await recordAudit(prisma, {
+        userId,
+        action,
+        details: details ? `${userEmail ? `[${userEmail}] ` : ''}${details}` : userEmail || null,
+        metadata,
       });
     } catch (err) {
       console.error('Audit log write error:', err);
@@ -712,13 +715,48 @@ class DatabaseStore {
         },
       });
 
-      await tx.auditLog.create({
-        data: {
-          userId: data.createdById,
-          action: 'RFQ_CREATED',
-          details: `Created RFQ ${rfqNumber} with ${data.items.length} line items and assigned ${data.vendorIds.length} suppliers`,
+      await recordAudit(tx, {
+        userId: data.createdById,
+        action: 'RFQ_CREATED',
+        category: 'RFQ',
+        entityType: 'RFQ',
+        entityId: createdRfq.id,
+        entityIdentifier: rfqNumber,
+        details: `Created RFQ ${rfqNumber} with ${data.items.length} line items and assigned ${data.vendorIds.length} suppliers`,
+        metadata: {
+          rfqNumber,
+          title: data.title,
+          category: data.category,
+          deliveryLocation: data.deliveryLocation,
+          deadline: data.deadline,
+          itemsCount: data.items.length,
+          vendorIds: data.vendorIds,
         },
       });
+
+      // Dispatch notifications to invited vendors with registered accounts
+      if (data.vendorIds && data.vendorIds.length > 0) {
+        const invitedVendors = await tx.vendor.findMany({
+          where: { id: { in: data.vendorIds }, userId: { not: null } },
+          select: { id: true, userId: true },
+        });
+
+        for (const vendor of invitedVendors) {
+          if (vendor.userId) {
+            await createNotification(tx, {
+              userId: vendor.userId,
+              title: `New RFQ: ${rfqNumber}`,
+              description: `You have been invited to quote for RFQ ${rfqNumber}: "${data.title}". Deadline: ${new Date(data.deadline).toLocaleDateString('en-IN')}.`,
+              type: NotificationType.RFQ_UPDATE,
+              entityType: 'RFQ',
+              entityId: createdRfq.id,
+              entityIdentifier: rfqNumber,
+              linkUrl: '/rfqs',
+              dedupeKey: `RFQ_INVITE_${createdRfq.id}_${vendor.userId}`,
+            });
+          }
+        }
+      }
 
       return this.mapRfq(createdRfq);
     }, {
@@ -832,36 +870,72 @@ class DatabaseStore {
   }
 
   public async updateRfq(id: string, updates: Partial<Rfq>, userId: string): Promise<Rfq | null> {
-    const rfq = await prisma.rfq.findUnique({ where: { id }, include: { items: true, quotations: true } });
-    if (!rfq) return null;
+    return await prisma.$transaction(async (tx) => {
+      const rfq = await tx.rfq.findUnique({ where: { id }, include: { items: true, quotations: true, invitations: true } });
+      if (!rfq) return null;
 
-    const updated = await prisma.rfq.update({
-      where: { id },
-      data: {
-        ...(updates.title !== undefined && { title: updates.title }),
-        ...(updates.description !== undefined && { description: updates.description }),
-        ...(updates.category !== undefined && { category: updates.category }),
-        ...(updates.deliveryLocation !== undefined && { deliveryLocation: updates.deliveryLocation }),
-        ...(updates.deadline !== undefined && { deadline: new Date(updates.deadline) }),
-        ...(updates.status !== undefined && { status: updates.status as any }),
-      },
-      include: {
-        createdBy: { select: { firstName: true, lastName: true } },
-        items: true,
-        invitations: {
-          include: {
-            vendor: { select: { id: true, name: true, category: true, email: true } },
+      const updated = await tx.rfq.update({
+        where: { id },
+        data: {
+          ...(updates.title !== undefined && { title: updates.title }),
+          ...(updates.description !== undefined && { description: updates.description }),
+          ...(updates.category !== undefined && { category: updates.category }),
+          ...(updates.deliveryLocation !== undefined && { deliveryLocation: updates.deliveryLocation }),
+          ...(updates.deadline !== undefined && { deadline: new Date(updates.deadline) }),
+          ...(updates.status !== undefined && { status: updates.status as any }),
+        },
+        include: {
+          createdBy: { select: { firstName: true, lastName: true } },
+          items: true,
+          invitations: {
+            include: {
+              vendor: { select: { id: true, name: true, category: true, email: true, userId: true } },
+            },
+          },
+          attachments: {
+            select: { id: true, rfqId: true, fileName: true, fileSize: true, mimeType: true, createdAt: true },
           },
         },
-        attachments: {
-          select: { id: true, rfqId: true, fileName: true, fileSize: true, mimeType: true, createdAt: true },
+      });
+
+      await recordAudit(tx, {
+        userId,
+        action: 'RFQ_UPDATED',
+        category: 'RFQ',
+        entityType: 'RFQ',
+        entityId: updated.id,
+        entityIdentifier: updated.rfqNumber,
+        details: `Updated RFQ ${updated.rfqNumber} details`,
+        metadata: {
+          rfqNumber: updated.rfqNumber,
+          updatedFields: Object.keys(updates),
+          status: updated.status,
+          deadline: updated.deadline,
         },
-      },
+      });
+
+      // Notify invited vendors if status, deadline, or title changed
+      const isRelevantChange = updates.deadline !== undefined || updates.status !== undefined || updates.title !== undefined;
+      if (isRelevantChange && updated.invitations && updated.invitations.length > 0) {
+        for (const inv of updated.invitations) {
+          if (inv.vendor?.userId) {
+            await createNotification(tx, {
+              userId: inv.vendor.userId,
+              title: `RFQ ${updated.rfqNumber} Updated`,
+              description: `RFQ ${updated.rfqNumber} ("${updated.title}") has been updated. Status: ${updated.status}.`,
+              type: NotificationType.RFQ_UPDATE,
+              entityType: 'RFQ',
+              entityId: updated.id,
+              entityIdentifier: updated.rfqNumber,
+              linkUrl: '/rfqs',
+              dedupeKey: `RFQ_UPDATED_${updated.id}_${inv.vendor.userId}_${updated.updatedAt.getTime()}`,
+            });
+          }
+        }
+      }
+
+      return this.mapRfq(updated);
     });
-
-    await this.logAudit(userId, null, 'RFQ_UPDATED', `Updated RFQ ${updated.rfqNumber} details`);
-
-    return this.mapRfq(updated);
   }
 
   // --- Quotation Store Methods ---
@@ -969,7 +1043,7 @@ class DatabaseStore {
           },
           include: {
             items: { include: { rfqItem: true } },
-            vendor: { select: { id: true, name: true, gstin: true } },
+            vendor: { select: { id: true, name: true, gstin: true, userId: true } },
             rfq: { select: { id: true, title: true, rfqNumber: true } },
           },
         });
@@ -996,7 +1070,7 @@ class DatabaseStore {
           },
           include: {
             items: { include: { rfqItem: true } },
-            vendor: { select: { id: true, name: true, gstin: true } },
+            vendor: { select: { id: true, name: true, gstin: true, userId: true } },
             rfq: { select: { id: true, title: true, rfqNumber: true } },
           },
         });
@@ -1010,6 +1084,40 @@ class DatabaseStore {
           respondedAt: new Date(),
         },
       });
+
+      if (data.status === 'SUBMITTED') {
+        await recordAudit(tx, {
+          userId: quotationRecord.vendor?.userId || null,
+          action: 'QUOTATION_SUBMITTED',
+          category: 'QUOTATION',
+          entityType: 'QUOTATION',
+          entityId: quotationRecord.id,
+          entityIdentifier: quotationRecord.quotationNumber,
+          details: `Quotation ${quotationRecord.quotationNumber} submitted by ${quotationRecord.vendor?.name} for RFQ ${rfq.rfqNumber} (Amount: ₹${Number(quotationRecord.grandTotal).toLocaleString('en-IN')})`,
+          metadata: {
+            rfqId: rfq.id,
+            rfqNumber: rfq.rfqNumber,
+            quotationId: quotationRecord.id,
+            quotationNumber: quotationRecord.quotationNumber,
+            vendorId: data.vendorId,
+            grandTotal: Number(quotationRecord.grandTotal),
+          },
+        });
+
+        if (rfq.createdById) {
+          await createNotification(tx, {
+            userId: rfq.createdById,
+            title: `Quotation Received: ${quotationRecord.quotationNumber}`,
+            description: `Supplier ${quotationRecord.vendor?.name} submitted quotation ${quotationRecord.quotationNumber} for RFQ ${rfq.rfqNumber} (₹${Number(quotationRecord.grandTotal).toLocaleString('en-IN')}).`,
+            type: NotificationType.RFQ_UPDATE,
+            entityType: 'QUOTATION',
+            entityId: quotationRecord.id,
+            entityIdentifier: quotationRecord.quotationNumber,
+            linkUrl: '/rfqs',
+            dedupeKey: `QUOTE_SUBMITTED_${quotationRecord.id}_${rfq.createdById}`,
+          });
+        }
+      }
 
       return this.mapQuotation(quotationRecord);
     }, {
@@ -1282,13 +1390,39 @@ class DatabaseStore {
         });
       }
 
-      await tx.auditLog.create({
-        data: {
-          userId,
-          action: 'SELECTED_FOR_APPROVAL',
-          details: `Selected quotation ${updatedQuotation.quotationNumber} from ${quotation.vendor.name} (Amount: ₹${Number(updatedQuotation.grandTotal).toLocaleString('en-IN')}) for RFQ ${updatedRfq.rfqNumber}`,
+      await recordAudit(tx, {
+        userId,
+        action: 'SELECTED_FOR_APPROVAL',
+        category: 'APPROVAL',
+        entityType: 'APPROVAL',
+        entityId: approvalRequest.id,
+        entityIdentifier: updatedQuotation.quotationNumber,
+        details: `Selected quotation ${updatedQuotation.quotationNumber} from ${quotation.vendor.name} (Amount: ₹${Number(updatedQuotation.grandTotal).toLocaleString('en-IN')}) for RFQ ${updatedRfq.rfqNumber}`,
+        metadata: {
+          rfqId: rfq.id,
+          rfqNumber: updatedRfq.rfqNumber,
+          quotationId: updatedQuotation.id,
+          quotationNumber: updatedQuotation.quotationNumber,
+          vendorId: quotation.vendor.id,
+          grandTotal: Number(updatedQuotation.grandTotal),
         },
       });
+
+      // Notify Approver users (MANAGER_APPROVER and ADMIN)
+      const approvers = await getApproverUsers(tx);
+      for (const approver of approvers) {
+        await createNotification(tx, {
+          userId: approver.id,
+          title: `Pending Approval: ${updatedQuotation.quotationNumber}`,
+          description: `Quotation ${updatedQuotation.quotationNumber} for RFQ ${updatedRfq.rfqNumber} (${quotation.vendor.name}, ₹${Number(updatedQuotation.grandTotal).toLocaleString('en-IN')}) requires your approval.`,
+          type: NotificationType.APPROVAL_ALERT,
+          entityType: 'APPROVAL',
+          entityId: approvalRequest.id,
+          entityIdentifier: updatedQuotation.quotationNumber,
+          linkUrl: '/approvals',
+          dedupeKey: `APPROVAL_REQ_${approvalRequest.id}_${approver.id}`,
+        });
+      }
 
       return {
         success: true,
@@ -1577,13 +1711,53 @@ class DatabaseStore {
       });
 
       // Record in AuditLog
-      await tx.auditLog.create({
-        data: {
-          userId,
-          action: `APPROVAL_${newApprovalStatus}`,
-          details: `${newApprovalStatus} approval request for quotation ${approval.quotation.quotationNumber} (RFQ: ${approval.rfq.rfqNumber}). Remarks: ${cleanedRemarks || 'None'}`,
+      await recordAudit(tx, {
+        userId,
+        action: `APPROVAL_${newApprovalStatus}`,
+        category: 'APPROVAL',
+        entityType: 'APPROVAL',
+        entityId: id,
+        entityIdentifier: approval.quotation.quotationNumber,
+        details: `${newApprovalStatus} approval request for quotation ${approval.quotation.quotationNumber} (RFQ: ${approval.rfq.rfqNumber}). Remarks: ${cleanedRemarks || 'None'}`,
+        metadata: {
+          approvalId: id,
+          status: newApprovalStatus,
+          remarks: cleanedRemarks,
+          quotationNumber: approval.quotation.quotationNumber,
+          rfqNumber: approval.rfq.rfqNumber,
+          grandTotal: Number(approval.quotation.grandTotal),
         },
       });
+
+      // 1. Notify the requester who submitted the quotation for approval
+      if (approval.submittedById) {
+        await createNotification(tx, {
+          userId: approval.submittedById,
+          title: `Quotation ${newApprovalStatus === 'APPROVED' ? 'Approved' : 'Rejected'}: ${approval.quotation.quotationNumber}`,
+          description: `Quotation ${approval.quotation.quotationNumber} for RFQ ${approval.rfq.rfqNumber} has been ${newApprovalStatus.toLowerCase()}. Remarks: ${cleanedRemarks || 'None'}.`,
+          type: NotificationType.APPROVAL_ALERT,
+          entityType: 'APPROVAL',
+          entityId: id,
+          entityIdentifier: approval.quotation.quotationNumber,
+          linkUrl: '/approvals',
+          dedupeKey: `APPROVAL_DECISION_${id}_${approval.submittedById}_${newApprovalStatus}`,
+        });
+      }
+
+      // 2. Notify the vendor user if linked
+      if (approval.quotation?.vendor?.userId) {
+        await createNotification(tx, {
+          userId: approval.quotation.vendor.userId,
+          title: `Quotation ${newApprovalStatus === 'APPROVED' ? 'Accepted' : 'Not Selected'}: ${approval.quotation.quotationNumber}`,
+          description: `Your quotation ${approval.quotation.quotationNumber} for RFQ ${approval.rfq.rfqNumber} has been ${newApprovalStatus === 'APPROVED' ? 'approved' : 'rejected'}. Remarks: ${cleanedRemarks || 'None'}.`,
+          type: NotificationType.APPROVAL_ALERT,
+          entityType: 'QUOTATION',
+          entityId: approval.quotationId,
+          entityIdentifier: approval.quotation.quotationNumber,
+          linkUrl: '/quotations',
+          dedupeKey: `APPROVAL_VENDOR_${id}_${approval.quotation.vendor.userId}_${newApprovalStatus}`,
+        });
+      }
 
       // Fetch fresh updated record with full relations
       const finalRecord = await tx.approvalRequest.findUnique({
@@ -1888,13 +2062,38 @@ class DatabaseStore {
       });
 
       // 9. Audit trail
-      await tx.auditLog.create({
-        data: {
-          userId,
-          action: 'PO_GENERATED',
-          details: `Generated Purchase Order ${poNumber} for approved quotation ${quotation.quotationNumber} from ${quotation.vendor.name} (Amount: ₹${grandTotal.toNumber().toLocaleString('en-IN')})`,
+      await recordAudit(tx, {
+        userId,
+        action: 'PO_GENERATED',
+        category: 'PO',
+        entityType: 'PURCHASE_ORDER',
+        entityId: createdPO.id,
+        entityIdentifier: poNumber,
+        details: `Generated Purchase Order ${poNumber} for approved quotation ${quotation.quotationNumber} from ${quotation.vendor.name} (Amount: ₹${grandTotal.toNumber().toLocaleString('en-IN')})`,
+        metadata: {
+          poId: createdPO.id,
+          poNumber,
+          rfqId: quotation.rfqId,
+          quotationId: quotation.id,
+          vendorId: quotation.vendor.id,
+          grandTotal: grandTotal.toNumber(),
         },
       });
+
+      // 10. Notify vendor user if linked
+      if (quotation.vendor?.userId) {
+        await createNotification(tx, {
+          userId: quotation.vendor.userId,
+          title: `Purchase Order Issued: ${poNumber}`,
+          description: `A new Purchase Order ${poNumber} has been issued for Quotation ${quotation.quotationNumber} (Total: ₹${grandTotal.toNumber().toLocaleString('en-IN')}).`,
+          type: NotificationType.SYSTEM_NOTICE,
+          entityType: 'PURCHASE_ORDER',
+          entityId: createdPO.id,
+          entityIdentifier: poNumber,
+          linkUrl: '/purchase-orders',
+          dedupeKey: `PO_ISSUED_${createdPO.id}_${quotation.vendor.userId}`,
+        });
+      }
 
       return this.formatPurchaseOrder(createdPO);
     }, {
@@ -2352,13 +2551,53 @@ class DatabaseStore {
         });
 
         // 11. Audit trail
-        await tx.auditLog.create({
-          data: {
-            userId,
-            action: 'INVOICE_CREATED',
-            details: `Generated Tax Invoice ${invoiceNumber} for Purchase Order ${po.poNumber} [Grand Total: INR ${taxResult.grandTotal.toNumber().toLocaleString('en-IN')}]`,
+        await recordAudit(tx, {
+          userId,
+          action: 'INVOICE_CREATED',
+          category: 'INVOICE',
+          entityType: 'INVOICE',
+          entityId: createdInvoice.id,
+          entityIdentifier: invoiceNumber,
+          details: `Generated Tax Invoice ${invoiceNumber} for Purchase Order ${po.poNumber} [Grand Total: INR ${taxResult.grandTotal.toNumber().toLocaleString('en-IN')}]`,
+          metadata: {
+            invoiceId: createdInvoice.id,
+            invoiceNumber,
+            poId: po.id,
+            poNumber: po.poNumber,
+            vendorId: po.vendorId,
+            grandTotal: taxResult.grandTotal.toNumber(),
+            matchStatus: 'MATCHED',
           },
         });
+
+        // 12. Notify PO creator (Procurement Officer) and Finance Managers
+        const recipientUserIds = new Set<string>();
+        if (po.createdById) {
+          recipientUserIds.add(po.createdById);
+        }
+        const approvers = await getApproverUsers(tx);
+        for (const app of approvers) {
+          recipientUserIds.add(app.id);
+        }
+
+        // Exclude the actor who submitted the invoice
+        if (userId) {
+          recipientUserIds.delete(userId);
+        }
+
+        for (const recipientId of recipientUserIds) {
+          await createNotification(tx, {
+            userId: recipientId,
+            title: `New Invoice Received: ${invoiceNumber}`,
+            description: `Invoice ${invoiceNumber} has been created for Purchase Order ${po.poNumber} by ${po.vendor.name} (Amount: ₹${taxResult.grandTotal.toNumber().toLocaleString('en-IN')}). 3-Way Match: MATCHED.`,
+            type: NotificationType.INVOICE_UPDATE,
+            entityType: 'INVOICE',
+            entityId: createdInvoice.id,
+            entityIdentifier: invoiceNumber,
+            linkUrl: '/invoices',
+            dedupeKey: `INVOICE_CREATED_${createdInvoice.id}_${recipientId}`,
+          });
+        }
 
         return this.formatInvoice(createdInvoice);
       },
@@ -2601,13 +2840,52 @@ class DatabaseStore {
         },
       });
 
-      await tx.auditLog.create({
-        data: {
-          userId,
-          action: 'INVOICE_PAID',
-          details: `Invoice ${invoice.invoiceNumber} marked as PAID for Purchase Order ${invoice.purchaseOrder?.poNumber || ''} [Amount: INR ${Number(invoice.grandTotal).toLocaleString('en-IN')}]`,
+      await recordAudit(tx, {
+        userId,
+        action: 'INVOICE_PAID',
+        category: 'INVOICE',
+        entityType: 'INVOICE',
+        entityId: id,
+        entityIdentifier: invoice.invoiceNumber,
+        details: `Invoice ${invoice.invoiceNumber} marked as PAID for Purchase Order ${invoice.purchaseOrder?.poNumber || ''} [Amount: INR ${Number(invoice.grandTotal).toLocaleString('en-IN')}]`,
+        metadata: {
+          invoiceId: id,
+          invoiceNumber: invoice.invoiceNumber,
+          poNumber: invoice.purchaseOrder?.poNumber,
+          grandTotal: Number(invoice.grandTotal),
+          paymentStatus: 'PAID',
         },
       });
+
+      // 1. Notify vendor user if linked
+      if (invoice.vendor?.userId) {
+        await createNotification(tx, {
+          userId: invoice.vendor.userId,
+          title: `Payment Processed: ${invoice.invoiceNumber}`,
+          description: `Your invoice ${invoice.invoiceNumber} (PO: ${invoice.purchaseOrder?.poNumber || ''}) has been marked as PAID (Amount: ₹${Number(invoice.grandTotal).toLocaleString('en-IN')}).`,
+          type: NotificationType.INVOICE_UPDATE,
+          entityType: 'INVOICE',
+          entityId: id,
+          entityIdentifier: invoice.invoiceNumber,
+          linkUrl: '/invoices',
+          dedupeKey: `INVOICE_PAID_${id}_${invoice.vendor.userId}`,
+        });
+      }
+
+      // 2. Notify invoice creator (if different from paying admin)
+      if (invoice.createdById && invoice.createdById !== userId) {
+        await createNotification(tx, {
+          userId: invoice.createdById,
+          title: `Invoice Payment Completed: ${invoice.invoiceNumber}`,
+          description: `Invoice ${invoice.invoiceNumber} for ${invoice.vendor?.name} has been marked as PAID.`,
+          type: NotificationType.INVOICE_UPDATE,
+          entityType: 'INVOICE',
+          entityId: id,
+          entityIdentifier: invoice.invoiceNumber,
+          linkUrl: '/invoices',
+          dedupeKey: `INVOICE_PAID_${id}_${invoice.createdById}`,
+        });
+      }
 
       return this.formatInvoice(updated);
     });
